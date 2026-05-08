@@ -1,0 +1,52 @@
+# Gradle
+.gradle/
+.gradle
+*.gradle.kts.lock
+build/
+local.properties
+
+# IDE
+.idea/
+.DS_Store
+*.iml
+*.iws
+*.ipr
+
+# Keystore (NEVER commit!)
+*.jks
+*.keystore
+KEYSTORE_INFO.txt
+
+# Sensitive files
+.env
+*.properties.local
+
+# Build outputs
+app/build/
+*.apk
+*.aab
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Android
+*.o
+*.so
+*.dylib
+*.dll
+*.exe
+*.out
+*.class
+*.jar
+*.zip
+*.tar.gz
+bin/
+obj/
+
+# IDE Specific
+.vscode/
+*.swp
+*.swo
+*~
+

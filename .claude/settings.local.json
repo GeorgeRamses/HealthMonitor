@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(./gradlew assembleDebug)",
+      "Bash(cmd /c \"gradlew.bat assembleDebug 2>&1\")",
+      "Bash(powershell.exe -Command \"Set-Location 'D:\\\\George\\\\Projects\\\\Android\\\\health-monitor'; .\\\\gradlew.bat assembleDebug 2>&1 | Select-Object -Last 100\")",
+      "Bash(rm \"D:/George/Projects/Android/health-monitor/app/src/main/java/com/healthmonitor/app/shared/local/LocalDataSource.kt\")",
+      "Bash(rm \"D:/George/Projects/Android/health-monitor/app/src/main/java/com/healthmonitor/app/shared/local/SqlDelightLocalDataSource.kt\")",
+      "mcp__idea__search_file",
+      "mcp__idea__list_directory_tree",
+      "mcp__idea__search_in_files_by_text",
+      "mcp__idea__read_file",
+      "mcp__idea__build_project",
+      "mcp__idea__get_file_problems"
+    ]
+  }
+}
