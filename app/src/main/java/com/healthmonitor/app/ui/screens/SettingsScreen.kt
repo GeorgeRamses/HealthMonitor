@@ -2,7 +2,6 @@ package com.healthmonitor.app.ui.screens
 
 import android.content.Context
 import androidx.compose.animation.*
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
@@ -27,21 +26,21 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavHostController
 import com.healthmonitor.app.ui.design.*
 import com.healthmonitor.app.ui.viewmodel.DashboardViewModel
+import com.healthmonitor.app.ui.viewmodel.ExportViewModel
 import com.healthmonitor.app.ui.viewmodel.PatientViewModel
 import com.healthmonitor.app.util.AlarmScheduler
 import com.healthmonitor.app.util.parseMedicationTimes
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Alarm preference helpers — persisted in SharedPreferences so they survive
-// app restarts. Stored in the same prefs file as patient / case IDs.
+// Alarm preference helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-private const val PREFS               = "health_monitor_prefs"
-private const val KEY_ALARMS_ENABLED  = "medication_alarms_enabled"
+private const val PREFS              = "health_monitor_prefs"
+private const val KEY_ALARMS_ENABLED = "medication_alarms_enabled"
 
 fun isMedicationAlarmsEnabled(context: Context): Boolean =
     context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        .getBoolean(KEY_ALARMS_ENABLED, true)       // default: ON
+        .getBoolean(KEY_ALARMS_ENABLED, true)
 
 fun setMedicationAlarmsEnabled(context: Context, enabled: Boolean) {
     context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -55,18 +54,20 @@ fun setMedicationAlarmsEnabled(context: Context, enabled: Boolean) {
 @Composable
 fun SettingsScreen(
     navController: NavHostController,
-    patientViewModel: PatientViewModel   = hiltViewModel(),
-    dashboardViewModel: DashboardViewModel = hiltViewModel()
+    patientViewModel: PatientViewModel    = hiltViewModel(),
+    dashboardViewModel: DashboardViewModel = hiltViewModel(),
+    exportViewModel: ExportViewModel      = hiltViewModel()
 ) {
     val context         = LocalContext.current
     val activePatientId by patientViewModel.activePatientIdFlow.collectAsState()
     val patients        by patientViewModel.getAllPatients().collectAsState(initial = emptyList())
     val activePatient   = patients.find { it.id == activePatientId }
+    val exportState     by exportViewModel.uiState.collectAsState()
 
-    // ── Alarm toggle — read initial value from SharedPreferences ─────────────
-    var alarmsEnabled by remember {
-        mutableStateOf(isMedicationAlarmsEnabled(context))
-    }
+    var alarmsEnabled by remember { mutableStateOf(isMedicationAlarmsEnabled(context)) }
+
+    // Clear export state when screen is entered
+    LaunchedEffect(Unit) { exportViewModel.clearState() }
 
     Column(
         modifier = Modifier
@@ -76,7 +77,7 @@ fun SettingsScreen(
             .padding(HMSpacing.lg)
     ) {
 
-        // ── Title ─────────────────────────────────────────────────────────────
+        // ── Title ─────────────────────────────────────────────────────────
         Text(
             "الإعدادات",
             fontSize   = 24.sp,
@@ -85,11 +86,8 @@ fun SettingsScreen(
             modifier   = Modifier.padding(bottom = HMSpacing.xl)
         )
 
-        // ── Active patient ────────────────────────────────────────────────────
-        SettingsSectionHeader(
-            title = "المريض النشط",
-            icon  = Icons.Outlined.Person
-        )
+        // ── Active patient ────────────────────────────────────────────────
+        SettingsSectionHeader(title = "المريض النشط", icon = Icons.Outlined.Person)
         Spacer(Modifier.height(HMSpacing.sm))
 
         if (activePatient != null) {
@@ -99,22 +97,10 @@ fun SettingsScreen(
             if (activePatient.gender.isNotBlank())
                 SettingsInfoCard(activePatient.gender, "الجنس", Icons.Outlined.Wc)
             if (activePatient.medicalConditions.isNotBlank())
-                SettingsInfoCard(
-                    activePatient.medicalConditions,
-                    "الحالات الطبية",
-                    Icons.Default.MedicalServices
-                )
+                SettingsInfoCard(activePatient.medicalConditions, "الحالات الطبية", Icons.Default.MedicalServices)
         } else {
-            HMCard(
-                modifier        = Modifier.fillMaxWidth(),
-                borderColor     = HMColor.AmberBorder,
-                backgroundColor = HMColor.AmberBg
-            ) {
-                Text(
-                    "لم يتم تحديد مريض نشط",
-                    fontSize = 13.sp,
-                    color    = HMColor.AmberBright
-                )
+            HMCard(modifier = Modifier.fillMaxWidth(), borderColor = HMColor.AmberBorder, backgroundColor = HMColor.AmberBg) {
+                Text("لم يتم تحديد مريض نشط", fontSize = 13.sp, color = HMColor.AmberBright)
             }
         }
 
@@ -128,22 +114,18 @@ fun SettingsScreen(
 
         Spacer(Modifier.height(HMSpacing.xl))
 
-        // ── Alarms & Notifications ────────────────────────────────────────────
-        SettingsSectionHeader(
-            title = "التنبيهات والمنبهات",
-            icon  = Icons.Outlined.Notifications
-        )
+        // ── Alarms ────────────────────────────────────────────────────────
+        SettingsSectionHeader(title = "التنبيهات والمنبهات", icon = Icons.Outlined.Notifications)
         Spacer(Modifier.height(HMSpacing.sm))
 
-        // Main alarm toggle
         HMCard(
             modifier        = Modifier.fillMaxWidth(),
             borderColor     = if (alarmsEnabled) HMColor.GreenBorder else HMColor.BorderDefault,
             backgroundColor = if (alarmsEnabled) HMColor.GreenBg else HMColor.BgSurface
         ) {
             HMToggleRow(
-                title    = "منبهات الأدوية",
-                subtitle = if (alarmsEnabled)
+                title           = "منبهات الأدوية",
+                subtitle        = if (alarmsEnabled)
                     "✓ ستتلقى تنبيهاً عند حلول موعد كل جرعة"
                 else
                     "⚠️ المنبهات معطلة — لن تتلقى أي تذكير",
@@ -152,16 +134,9 @@ fun SettingsScreen(
                 onCheckedChange = { enabled ->
                     alarmsEnabled = enabled
                     setMedicationAlarmsEnabled(context, enabled)
-                    // Cancel or reschedule all active medication alarms immediately
-                    applyAlarmState(
-                        context      = context,
-                        enabled      = enabled,
-                        viewModel    = dashboardViewModel
-                    )
+                    applyAlarmState(context = context, enabled = enabled, viewModel = dashboardViewModel)
                 }
             )
-
-            // Animated warning when disabled
             AnimatedVisibility(
                 visible = !alarmsEnabled,
                 enter   = fadeIn() + expandVertically(),
@@ -175,76 +150,103 @@ fun SettingsScreen(
                         verticalAlignment     = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(HMSpacing.sm)
                     ) {
-                        Icon(
-                            Icons.Default.WarningAmber, null,
-                            tint     = HMColor.AmberBright,
-                            modifier = Modifier.size(14.dp)
-                        )
+                        Icon(Icons.Default.WarningAmber, null, tint = HMColor.AmberBright, modifier = Modifier.size(14.dp))
                         Text(
                             "يُنصح بإبقاء المنبهات مفعّلة لضمان انتظام الجرعات",
-                            fontSize   = 11.sp,
-                            color      = HMColor.AmberBright,
-                            lineHeight = 16.sp
+                            fontSize = 11.sp, color = HMColor.AmberBright, lineHeight = 16.sp
                         )
                     }
-                }
-            }
-        }
-
-        Spacer(Modifier.height(HMSpacing.sm))
-
-        // Quick link to per-medication reminder setup
-        HMPressable(
-            onClick  = { navController.navigate("medication_reminder") },
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            HMCard(modifier = Modifier.fillMaxWidth()) {
-                Row(
-                    modifier              = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment     = Alignment.CenterVertically
-                ) {
-                    Row(
-                        verticalAlignment     = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(HMSpacing.sm)
-                    ) {
-                        Icon(
-                            Icons.Default.Alarm, null,
-                            tint     = HMColor.BlueBright,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Column {
-                            Text(
-                                "إضافة منبه دواء سريع",
-                                fontSize   = 13.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color      = HMColor.TextPrimary
-                            )
-                            Text(
-                                "اضبط منبهاً بسرعة لأي دواء",
-                                fontSize = 11.sp,
-                                color    = HMColor.TextSecondary
-                            )
-                        }
-                    }
-                    Icon(
-                        Icons.Default.ChevronRight, null,
-                        tint     = HMColor.TextSecondary,
-                        modifier = Modifier.size(16.dp)
-                    )
                 }
             }
         }
 
         Spacer(Modifier.height(HMSpacing.xl))
 
-        // ── About ─────────────────────────────────────────────────────────────
-        SettingsSectionHeader(
-            title = "حول التطبيق",
-            icon  = Icons.Outlined.Info
-        )
+        // ── Data Export ───────────────────────────────────────────────────
+        SettingsSectionHeader(title = "تصدير البيانات", icon = Icons.Outlined.Share)
         Spacer(Modifier.height(HMSpacing.sm))
-        SettingsInfoCard("v5.3.4", "الإصدار", Icons.Default.Info)
+
+        HMCard(modifier = Modifier.fillMaxWidth()) {
+            Text(
+                "تصدير التقرير الطبي الشامل",
+                fontSize   = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+                color      = HMColor.TextPrimary
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "يشمل التقرير: بيانات المريض، الأدوية، قراءات ضغط الدم، الأعراض، والتقارير المخبرية.",
+                fontSize   = 12.sp,
+                color      = HMColor.TextSecondary,
+                lineHeight = 18.sp
+            )
+            Spacer(Modifier.height(HMSpacing.md))
+
+            // Error state
+            exportState.error?.let { err ->
+                AiErrorCard(err)
+                Spacer(Modifier.height(HMSpacing.sm))
+            }
+
+            // Success state
+            AnimatedVisibility(visible = exportState.success) {
+                Column {
+                    HMCard(
+                        modifier        = Modifier.fillMaxWidth(),
+                        borderColor     = HMColor.GreenBorder,
+                        backgroundColor = HMColor.GreenBg
+                    ) {
+                        Row(
+                            verticalAlignment     = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(HMSpacing.sm)
+                        ) {
+                            Icon(Icons.Default.CheckCircle, null, tint = HMColor.GreenBright, modifier = Modifier.size(16.dp))
+                            Text("تم إنشاء التقرير — سيفتح مربع المشاركة الآن.", fontSize = 12.sp, color = HMColor.GreenBright)
+                        }
+                    }
+                    Spacer(Modifier.height(HMSpacing.sm))
+                }
+            }
+
+            HMPrimaryButton(
+                text    = if (exportState.isLoading) "جارٍ إنشاء التقرير..." else "تصدير ومشاركة التقرير",
+                onClick = { exportViewModel.exportAndShare() },
+                enabled = !exportState.isLoading && activePatient != null,
+                leadingIcon = Icons.Outlined.Share,
+                color   = HMColor.GreenBright,
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            if (activePatient == null) {
+                Spacer(Modifier.height(HMSpacing.xs))
+                Text(
+                    "يرجى تحديد مريض أولاً لتفعيل التصدير.",
+                    fontSize = 11.sp,
+                    color    = HMColor.TextDisabled
+                )
+            }
+        }
+
+        Spacer(Modifier.height(HMSpacing.xl))
+
+        // ── Medication history ─────────────────────────────────────────────
+        SettingsSectionHeader(title = "السجلات", icon = Icons.Outlined.History)
+        Spacer(Modifier.height(HMSpacing.sm))
+
+        HMSecondaryButton(
+            text        = "سجل تاريخ الجرعات",
+            onClick     = { navController.navigate("medication_history") },
+            leadingIcon = Icons.Default.History,
+            color       = HMColor.BlueBright,
+            modifier    = Modifier.fillMaxWidth()
+        )
+
+        Spacer(Modifier.height(HMSpacing.xl))
+
+        // ── About ─────────────────────────────────────────────────────────
+        SettingsSectionHeader(title = "حول التطبيق", icon = Icons.Outlined.Info)
+        Spacer(Modifier.height(HMSpacing.sm))
+        SettingsInfoCard("v5.4.0", "الإصدار", Icons.Default.Info)
         SettingsInfoCard("SQLite — بدون إنترنت", "قاعدة البيانات", Icons.Default.Storage)
         SettingsInfoCard("Gemini AI", "محرك الذكاء الاصطناعي", Icons.Default.AutoAwesome)
 
@@ -253,29 +255,20 @@ fun SettingsScreen(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Cancel / reschedule all active medication alarms based on the new toggle state
+// Cancel / reschedule all alarms
 // ─────────────────────────────────────────────────────────────────────────────
 
-private fun applyAlarmState(
-    context: Context,
-    enabled: Boolean,
-    viewModel: DashboardViewModel
-) {
+private fun applyAlarmState(context: Context, enabled: Boolean, viewModel: DashboardViewModel) {
     val meds = viewModel.allMedications.value.filter { it.isActive && !it.isDeleted }
     if (enabled) {
-        // Reschedule every active medication alarm
         meds.forEach { med ->
             parseMedicationTimes(med.scheduledTimes).forEach { time ->
                 AlarmScheduler.schedule(context, med.name, med.id, time)
             }
         }
     } else {
-        // Cancel every active medication alarm
         meds.forEach { med ->
-            AlarmScheduler.cancelAll(
-                context, med.name, med.id,
-                parseMedicationTimes(med.scheduledTimes)
-            )
+            AlarmScheduler.cancelAll(context, med.name, med.id, parseMedicationTimes(med.scheduledTimes))
         }
     }
 }
@@ -312,9 +305,7 @@ private fun SettingsSectionHeader(title: String, icon: ImageVector) {
 
 @Composable
 private fun SettingsInfoCard(value: String, label: String, icon: ImageVector) {
-    HMCard(modifier = Modifier
-        .fillMaxWidth()
-        .padding(vertical = 3.dp)) {
+    HMCard(modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
         Row(
             modifier              = Modifier.fillMaxWidth(),
             verticalAlignment     = Alignment.CenterVertically,
@@ -323,12 +314,7 @@ private fun SettingsInfoCard(value: String, label: String, icon: ImageVector) {
             Icon(icon, null, tint = HMColor.GreenBright, modifier = Modifier.size(18.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(label, fontSize = 10.sp, color = HMColor.TextSecondary, letterSpacing = 0.5.sp)
-                Text(
-                    value,
-                    fontSize   = 13.sp,
-                    fontWeight = FontWeight.Medium,
-                    color      = HMColor.TextPrimary
-                )
+                Text(value, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = HMColor.TextPrimary)
             }
         }
     }

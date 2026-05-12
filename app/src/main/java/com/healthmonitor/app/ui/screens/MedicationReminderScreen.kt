@@ -7,18 +7,25 @@ import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.BorderStroke
+import androidx.compose.animation.*
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Alarm
-import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.outlined.Alarm
+import androidx.compose.material.icons.outlined.LocalPharmacy
+import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -30,6 +37,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.navigation.NavHostController
 import com.healthmonitor.app.data.local.entities.MedicationEntity
+import com.healthmonitor.app.ui.design.*
 import com.healthmonitor.app.ui.viewmodel.DashboardViewModel
 import com.healthmonitor.app.ui.viewmodel.MedicationReminderViewModel
 import com.healthmonitor.app.util.ActiveCaseManager
@@ -37,39 +45,33 @@ import com.healthmonitor.app.util.ActivePatientManager
 import com.healthmonitor.app.util.format12Hour
 import org.json.JSONArray
 
-import androidx.compose.material3.rememberTimePickerState
-import com.healthmonitor.app.ui.design.HMAlarmPermissionDialogs
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MedicationReminderScreen(
     navController: NavHostController,
     reminderViewModel: MedicationReminderViewModel = hiltViewModel(),
-    dashboardViewModel: DashboardViewModel = hiltViewModel()
+    dashboardViewModel: DashboardViewModel         = hiltViewModel()
 ) {
     var medicationName by remember { mutableStateOf("") }
     val timePickerState = rememberTimePickerState(initialHour = 8, initialMinute = 0, is24Hour = false)
-    var showTimePicker by remember { mutableStateOf(false) }
-    var showSuccess by remember { mutableStateOf(false) }
+    var showTimePicker  by remember { mutableStateOf(false) }
+    var showSuccess     by remember { mutableStateOf(false) }
 
-
-    val context = LocalContext.current
-    val activeCaseId = ActiveCaseManager.getActiveCaseId()
+    val context        = LocalContext.current
+    val activeCaseId   = ActiveCaseManager.getActiveCaseId()
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
 
-    // ── Permission / capability state ────────────────────────────────────
-
-    val notifEnabledState = remember {
+    // ── Permission state ──────────────────────────────────────────────────
+    val notifEnabled = remember {
         mutableStateOf(NotificationManagerCompat.from(context).areNotificationsEnabled())
     }
-    val exactAlarmState = remember { mutableStateOf(reminderViewModel.canScheduleExactAlarms()) }
+    val exactAlarmOk = remember { mutableStateOf(reminderViewModel.canScheduleExactAlarms()) }
 
-    // Re-check after the user returns from Settings
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
-                notifEnabledState.value = NotificationManagerCompat.from(context).areNotificationsEnabled()
-                exactAlarmState.value = reminderViewModel.canScheduleExactAlarms()
+                notifEnabled.value = NotificationManagerCompat.from(context).areNotificationsEnabled()
+                exactAlarmOk.value = reminderViewModel.canScheduleExactAlarms()
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -79,70 +81,152 @@ fun MedicationReminderScreen(
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
-        notifEnabledState.value = granted
+        notifEnabled.value = granted
         if (!granted) Toast.makeText(
             context, "الإذن مرفوض — فعّل الإشعارات من إعدادات التطبيق", Toast.LENGTH_LONG
         ).show()
     }
 
-    // ── Time picker ──────────────────────────────────────────────────────
+    // ── OEM / A14 permission dialogs ──────────────────────────────────────
     HMAlarmPermissionDialogs(
         showA14Dialog = reminderViewModel.showA14Dialog,
         showOemDialog = reminderViewModel.showOemDialog,
-        onDismissA14 = { reminderViewModel.showA14Dialog = false },
-        onDismissOem = { reminderViewModel.showOemDialog = false }
+        onDismissA14  = { reminderViewModel.showA14Dialog = false },
+        onDismissOem  = { reminderViewModel.showOemDialog = false }
     )
+
+    // ── Time picker dialog ────────────────────────────────────────────────
     if (showTimePicker) {
         AlertDialog(
             onDismissRequest = { showTimePicker = false },
-            confirmButton = {
-                TextButton(onClick = { showTimePicker = false }) { Text("تم") }
+            containerColor   = HMColor.BgElevated,
+            title = { Text("اختر وقت الجرعة", color = HMColor.TextPrimary, fontWeight = FontWeight.SemiBold) },
+            text  = {
+                TimePicker(
+                    state  = timePickerState,
+                    colors = TimePickerDefaults.colors(
+                        clockDialColor                         = HMColor.BgOverlay,
+                        clockDialSelectedContentColor          = HMColor.TextInverse,
+                        clockDialUnselectedContentColor        = HMColor.TextSecondary,
+                        selectorColor                          = HMColor.GreenBright,
+                        containerColor                         = HMColor.BgElevated,
+                        periodSelectorBorderColor              = HMColor.GreenBright,
+                        periodSelectorSelectedContainerColor   = HMColor.GreenBright,
+                        periodSelectorUnselectedContainerColor = HMColor.BgOverlay,
+                        periodSelectorSelectedContentColor     = HMColor.TextInverse,
+                        periodSelectorUnselectedContentColor   = HMColor.TextSecondary,
+                        timeSelectorSelectedContainerColor     = HMColor.GreenBright.copy(alpha = 0.2f),
+                        timeSelectorUnselectedContainerColor   = HMColor.BgOverlay,
+                        timeSelectorSelectedContentColor       = HMColor.GreenBright,
+                        timeSelectorUnselectedContentColor     = HMColor.TextPrimary
+                    )
+                )
             },
-            text = {
-                TimePicker(state = timePickerState)
-            }
+            confirmButton = {
+                HMPressable(onClick = { showTimePicker = false }) {
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(HMRadius.sm))
+                            .background(HMColor.GreenBright)
+                            .padding(horizontal = 20.dp, vertical = 10.dp)
+                    ) {
+                        Text("تأكيد", fontWeight = FontWeight.SemiBold, color = HMColor.TextInverse)
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showTimePicker = false }) {
+                    Text("إلغاء", color = HMColor.TextSecondary)
+                }
+            },
+            shape = RoundedCornerShape(HMRadius.lg)
         )
     }
 
-    // ── UI ───────────────────────────────────────────────────────────────
+    // ── Success dialog ────────────────────────────────────────────────────
+    if (showSuccess) {
+        HMSuccessDialog(
+            title     = "تم الحفظ",
+            message   = "تم إضافة الدواء وجدولة المنبه بنجاح",
+            onDismiss = { showSuccess = false }
+        )
+    }
 
+    // ── Main UI ───────────────────────────────────────────────────────────
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF0F0F0F))
-            .padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
+            .background(HMColor.BgBase)
+            .verticalScroll(rememberScrollState())
+            .padding(HMSpacing.lg),
+        verticalArrangement = Arrangement.spacedBy(HMSpacing.md)
     ) {
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(Modifier.height(HMSpacing.sm))
 
-        // Notifications banner
-        if (!notifEnabledState.value) {
-            PermissionBanner(
-                title = "الإشعارات معطلة",
-                subtitle = "يجب تمكين الإشعارات لتلقي تذكيرات الأدوية",
-                btnText = "تمكين",
-                btnColor = Color(0xFF4CAF50),
-                onClick = {
+        // ── Screen title ──────────────────────────────────────────────────
+        Row(
+            verticalAlignment     = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(HMSpacing.sm)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(RoundedCornerShape(HMRadius.sm))
+                    .background(HMColor.GreenBright.copy(alpha = 0.12f))
+                    .border(1.dp, HMColor.GreenBorder, RoundedCornerShape(HMRadius.sm)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    Icons.Default.Alarm, null,
+                    tint     = HMColor.GreenBright,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+            Column {
+                Text(
+                    "إضافة منبه دواء",
+                    fontSize   = 20.sp,
+                    fontWeight = FontWeight.Bold,
+                    color      = HMColor.TextPrimary
+                )
+                Text(
+                    "تذكير سريع بجرعة واحدة",
+                    fontSize = 11.sp,
+                    color    = HMColor.TextSecondary
+                )
+            }
+        }
+
+        // ── Permission banners ────────────────────────────────────────────
+        AnimatedVisibility(visible = !notifEnabled.value) {
+            HMPermissionBanner(
+                title       = "الإشعارات معطلة",
+                subtitle    = "يجب تمكين الإشعارات لتلقي تذكيرات الأدوية",
+                buttonText  = "تمكين",
+                accentColor = HMColor.RedBright,
+                onClick     = {
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                         permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                     } else {
-                        context.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
-                            putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
-                        })
+                        context.startActivity(
+                            Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                                putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+                            }
+                        )
                     }
                 }
             )
-            Spacer(modifier = Modifier.height(8.dp))
         }
 
-        // Exact-alarm banner
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !exactAlarmState.value) {
-            PermissionBanner(
-                title = "المنبهات الدقيقة معطلة",
-                subtitle = "مطلوب إذن جدولة المنبهات لضمان دقة التذكيرات",
-                btnText = "اطلب الإذن",
-                btnColor = Color(0xFFFFA000),
-                onClick = {
+        AnimatedVisibility(
+            visible = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !exactAlarmOk.value
+        ) {
+            HMPermissionBanner(
+                title       = "المنبهات الدقيقة معطلة",
+                subtitle    = "مطلوب لضمان دقة التذكيرات",
+                buttonText  = "اطلب الإذن",
+                accentColor = HMColor.AmberBright,
+                onClick     = {
                     try {
                         context.startActivity(
                             Intent("android.settings.REQUEST_SCHEDULE_EXACT_ALARMS")
@@ -156,189 +240,116 @@ fun MedicationReminderScreen(
                     }
                 }
             )
-            Spacer(modifier = Modifier.height(8.dp))
         }
 
-        Text(
-            "إضافة منبه دواء",
-            style = MaterialTheme.typography.headlineLarge.copy(
-                fontSize = 24.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color(0xFFE8E8E8)
-            ),
-            modifier = Modifier.padding(bottom = 32.dp)
-        )
+        // ── Input card ────────────────────────────────────────────────────
+        HMCard(modifier = Modifier.fillMaxWidth()) {
+            HMSectionHeader("بيانات الدواء")
+            Spacer(Modifier.height(HMSpacing.sm))
 
-        OutlinedTextField(
-            value = medicationName,
-            onValueChange = { medicationName = it },
-            label = { Text("اسم الدواء") },
-            placeholder = { Text("مثال: ELiquis", color = Color(0xFF555555)) },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true,
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedTextColor = Color(0xFFE8E8E8),
-                unfocusedTextColor = Color(0xFF888888),
-                focusedBorderColor = Color(0xFF4CAF50),
-                unfocusedBorderColor = Color(0xFF2A2A2A),
-                focusedLabelColor = Color(0xFF4CAF50),
-                unfocusedLabelColor = Color(0xFF666666),
-                cursorColor = Color(0xFF4CAF50)
-            ),
-            shape = RoundedCornerShape(8.dp)
-        )
+            HMTextField(
+                value         = medicationName,
+                onValueChange = { medicationName = it },
+                label         = "اسم الدواء *",
+                placeholder   = "مثال: Eliquis",
+                leadingIcon   = Icons.Outlined.LocalPharmacy,
+                singleLine    = true
+            )
+        }
 
-        Spacer(modifier = Modifier.height(20.dp))
+        // ── Time card ─────────────────────────────────────────────────────
+        HMCard(modifier = Modifier.fillMaxWidth()) {
+            HMSectionHeader("وقت الجرعة")
+            Spacer(Modifier.height(HMSpacing.sm))
 
-        // Time picker card
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(8.dp),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFF1A1A1A)),
-            border = BorderStroke(1.dp, Color(0xFF2A2A2A))
-        ) {
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
+                modifier              = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment     = Alignment.CenterVertically
             ) {
-                Column {
-                    Text(
-                        "وقت الجرعة",
-                        style = MaterialTheme.typography.labelSmall.copy(color = Color(0xFF888888))
+                Row(
+                    verticalAlignment     = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(HMSpacing.sm)
+                ) {
+                    Icon(
+                        Icons.Outlined.Schedule, null,
+                        tint     = HMColor.GreenBright,
+                        modifier = Modifier.size(20.dp)
                     )
                     Text(
                         format12Hour(timePickerState.hour, timePickerState.minute),
-                        style = MaterialTheme.typography.headlineMedium.copy(
-                            color = Color(0xFF4CAF50),
-                            fontWeight = FontWeight.Bold
-                        )
+                        fontSize   = 24.sp,
+                        fontWeight = FontWeight.Bold,
+                        color      = HMColor.GreenBright
                     )
                 }
-                Button(
-                    onClick = { showTimePicker = true },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A2A2A)),
-                    shape = RoundedCornerShape(8.dp)
-                ) {
-                    Icon(Icons.Default.Alarm, null, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("تغيير")
-                }
+                HMSecondaryButton(
+                    text        = "تغيير",
+                    onClick     = { showTimePicker = true },
+                    leadingIcon = Icons.Outlined.Alarm,
+                    color       = HMColor.GreenBright
+                )
             }
         }
 
-        Spacer(modifier = Modifier.height(32.dp))
-
-        Button(
-            onClick = {
+        // ── Save button ───────────────────────────────────────────────────
+        HMPrimaryButton(
+            text        = "حفظ المنبه",
+            onClick     = {
                 val timeString = "%02d:%02d".format(timePickerState.hour, timePickerState.minute)
-                // Resolve patient / case ids reactively
-                val patientId = ActivePatientManager.getActivePatientId()
+                val patientId  = ActivePatientManager.getActivePatientId()
 
                 if (patientId == null) {
                     Toast.makeText(context, "يرجى اختيار مريض أولاً", Toast.LENGTH_SHORT).show()
-                    return@Button
+                    return@HMPrimaryButton
                 }
                 if (activeCaseId == null) {
                     Toast.makeText(context, "يرجى اختيار حالة أولاً", Toast.LENGTH_SHORT).show()
-                    return@Button
+                    return@HMPrimaryButton
                 }
                 val med = MedicationEntity(
-                    patientId = patientId,
-                    caseId = activeCaseId,
-                    name = medicationName.trim(),
-                    dosage = "",
-                    frequency = "once_daily",
-                    timesPerDay = 1,
+                    patientId      = patientId,
+                    caseId         = activeCaseId,
+                    name           = medicationName.trim(),
+                    dosage         = "",
+                    frequency      = "once_daily",
+                    timesPerDay    = 1,
                     scheduledTimes = JSONArray(listOf(timeString)).toString(),
-                    startDate = System.currentTimeMillis()
+                    startDate      = System.currentTimeMillis()
                 )
-                // Persist medication to DB AND then schedule the alarm
-//                reminderViewModel.saveMedicationAndSchedule(med)
                 reminderViewModel.saveWithPermissionCheck(med)
                 medicationName = ""
-                showSuccess = true
+                showSuccess    = true
             },
-            enabled = medicationName.isNotBlank(),
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(56.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = Color(0xFF4CAF50),
-                disabledContainerColor = Color(0xFF2A2A2A)
-            ),
-            shape = RoundedCornerShape(8.dp)
-        ) {
-            Icon(Icons.Default.Save, null, modifier = Modifier.size(20.dp))
-            Spacer(modifier = Modifier.width(8.dp))
-            Text("حفظ المنبه", fontWeight = FontWeight.Bold)
-        }
-    }
-
-    if (showSuccess) {
-        AlertDialog(
-            onDismissRequest = { showSuccess = false },
-            icon = {
-                Icon(
-                    Icons.Default.CheckCircle, null,
-                    tint = Color(0xFF4CAF50),
-                    modifier = Modifier.size(48.dp)
-                )
-            },
-            title = { Text("تم الحفظ") },
-            text = { Text("تم إضافة الدواء وجدولة المنبه بنجاح") },
-            confirmButton = {
-                Button(
-                    onClick = { showSuccess = false },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50))
-                ) { Text("موافق") }
-            },
-            containerColor = Color(0xFF1A1A1A),
-            textContentColor = Color(0xFFE8E8E8),
-            titleContentColor = Color(0xFFE8E8E8)
+            enabled     = medicationName.isNotBlank(),
+            leadingIcon = Icons.Default.Save,
+            modifier    = Modifier.fillMaxWidth()
         )
-    }
-}
 
-@Composable
-private fun PermissionBanner(
-    title: String,
-    subtitle: String,
-    btnText: String,
-    btnColor: Color,
-    onClick: () -> Unit
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(8.dp),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF2A1A1A)),
-        border = BorderStroke(1.dp, btnColor.copy(alpha = 0.3f))
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+        // ── Info note ─────────────────────────────────────────────────────
+        HMCard(
+            modifier        = Modifier.fillMaxWidth(),
+            borderColor     = HMColor.BlueBorder,
+            backgroundColor = HMColor.BlueBg
         ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    title,
-                    style = MaterialTheme.typography.titleSmall.copy(
-                        color = Color(0xFFE8E8E8),
-                        fontWeight = FontWeight.Bold
-                    )
+            Row(
+                verticalAlignment     = Alignment.Top,
+                horizontalArrangement = Arrangement.spacedBy(HMSpacing.sm)
+            ) {
+                Icon(
+                    Icons.Filled.NotificationsOff, null,
+                    tint     = HMColor.BlueBright,
+                    modifier = Modifier.size(16.dp)
                 )
-                Text(subtitle, style = MaterialTheme.typography.bodySmall.copy(color = Color(0xFFBBBBBB)))
+                Text(
+                    "هذه الشاشة تضيف منبهاً سريعاً. لإدارة أدوية كاملة مع جرعات ومواعيد متعددة، استخدم شاشة الأدوية.",
+                    fontSize   = 12.sp,
+                    color      = HMColor.BlueBright.copy(alpha = 0.85f),
+                    lineHeight = 18.sp
+                )
             }
-            Spacer(modifier = Modifier.width(12.dp))
-            Button(
-                onClick = onClick,
-                colors = ButtonDefaults.buttonColors(containerColor = btnColor),
-                shape = RoundedCornerShape(8.dp)
-            ) { Text(btnText) }
         }
+
+        Spacer(Modifier.height(HMSpacing.xxxl))
     }
 }

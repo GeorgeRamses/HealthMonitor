@@ -1,6 +1,7 @@
 package com.healthmonitor.app.ui.viewmodel
 
 import android.app.Application
+import android.content.Context
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.healthmonitor.app.data.local.entities.*
@@ -13,6 +14,7 @@ import com.healthmonitor.app.util.addDays
 import com.healthmonitor.app.util.isMedicationScheduledOnDate
 import com.healthmonitor.app.util.parseMedicationTimes
 import com.healthmonitor.app.util.startOfDayMillis
+import com.healthmonitor.app.ui.design.AlarmPermissionHelper
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.*
@@ -21,6 +23,10 @@ import org.json.JSONArray
 import java.time.LocalDate
 import java.time.ZoneId
 import javax.inject.Inject
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.core.content.edit
 
 @HiltViewModel
 class DashboardViewModel @Inject constructor(
@@ -111,6 +117,9 @@ class DashboardViewModel @Inject constructor(
     private var bloodPressureCollectionJob: Job? = null
     private var bodyTemperatureCollectionJob: Job? = null
     private var symptomCollectionJob: Job? = null
+
+    var showA14Dialog by mutableStateOf(false)
+    var showOemDialog by mutableStateOf(false)
 
     init {
         observeActivePatient()
@@ -614,6 +623,37 @@ class DashboardViewModel @Inject constructor(
             )
         }
     }
+
+    // WITH this corrected version:
+     fun addMedicationWithPermissionCheck(
+         name: String, dosage: String, unit: String, freq: String,
+         times: List<String>, notes: String?, days: Int, mode: String,
+         totalQty: Double?, currentQty: Double?, qtyPerDose: Double
+     ) {
+         val context = getApplication<Application>().applicationContext
+
+         // Check A14 full-screen intent permission — only show dialog if ACTUALLY missing
+         if (AlarmPermissionHelper.needsFullScreenIntentPermission(context)) {
+             showA14Dialog = true
+         }
+
+         // Check OEM permission for Xiaomi on FIRST time adding medicine
+         if (AlarmPermissionHelper.isRestrictedOEM()) {
+             val prefs = context.getSharedPreferences("hm_permissions", Context.MODE_PRIVATE)
+             val hasSeenOemWarning = prefs.getBoolean("oem_warning_seen", false)
+
+             if (!hasSeenOemWarning) {
+                 // First time - show dialog
+                 showOemDialog = true
+                 // Mark that we've shown it once
+                 prefs.edit { putBoolean("oem_warning_seen", true) }
+             }
+         }
+
+         // Always save the medication regardless — the alarm will still work
+         // as a heads-up notification even without full-screen intent permission
+         addMedication(name, dosage, unit, freq, times, notes, days, mode, totalQty, currentQty, qtyPerDose)
+     }
 
     // ── Helpers ───────────────────────────────────────────────────────────
 

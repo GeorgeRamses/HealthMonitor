@@ -15,6 +15,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -31,6 +32,8 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.edit
+import androidx.core.net.toUri
 
 // ─────────────────────────────────────────────────────────────────────────────
 // HM TEXT FIELD — replaces all raw OutlinedTextField usages
@@ -499,6 +502,7 @@ fun HMToggleRow(
 // ─────────────────────────────────────────────────────────────────────────────
 
 object AlarmPermissionHelper {
+
     fun needsFullScreenIntentPermission(context: Context): Boolean {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -513,21 +517,43 @@ object AlarmPermissionHelper {
             .any { manufacturer.contains(it) }
     }
 
+    fun needsOemPermission(context: Context): Boolean {
+        if (!isRestrictedOEM()) return false
+        // Check if the user has ignored the warning before
+        val prefs = context.getSharedPreferences("hm_permissions", Context.MODE_PRIVATE)
+        return prefs.getBoolean("oem_warning_ignored", false)
+    }
+
+    fun markOemWarningIgnored(context: Context) {
+        context.getSharedPreferences("hm_permissions", Context.MODE_PRIVATE)
+            .edit {
+                putBoolean("oem_warning_ignored", true)
+            }
+    }
+
+    fun clearOemWarningIgnored(context: Context) {
+        context.getSharedPreferences("hm_permissions", Context.MODE_PRIVATE)
+            .edit {
+                putBoolean("oem_warning_ignored", false)
+            }
+    }
+
     fun openFullScreenIntentSettings(context: Context) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             val intent = Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT).apply {
-                data = Uri.parse("package:${context.packageName}")
+                data = "package:${context.packageName}".toUri()
             }
             context.startActivity(intent)
         }
     }
 
-    fun openAppInfoSettings(context: Context) {
-        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-            data = Uri.parse("package:${context.packageName}")
-        }
-        context.startActivity(intent)
-    }
+     fun openAppInfoSettings(context: Context) {
+         // Opens the App Info screen. The user must manually click "Other Permissions".
+         val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+             data = "package:${context.packageName}".toUri()
+         }
+         context.startActivity(intent)
+     }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -572,32 +598,80 @@ fun HMAlarmPermissionDialogs(
         )
     }
 
-    // Xiaomi/Oppo/OEM Specific Dialog
+    // Xiaomi/Oppo/OEM Specific Dialog for "Show on Lock Screen"
     if (showOemDialog) {
         AlertDialog(
             onDismissRequest = onDismissOem,
             shape = RoundedCornerShape(24.dp),
             containerColor = Color(0xFF1A1C1E),
             title = {
-                Text("إعدادات قفل الشاشة", color = Color.White, fontWeight = FontWeight.Bold)
+                Text("إعدادات شاشة القفل", color = Color.White, fontWeight = FontWeight.Bold)
             },
             text = {
                 Text(
-                    "يرجى تفعيل 'الظهور على شاشة القفل' من إعدادات التطبيق لضمان عمل المنبه بشكل صحيح.",
-                    color = Color.LightGray
+                    "لضمان ظهور المنبه والهاتف مغلق، يرجى فتح الإعدادات ثم الدخول إلى:\n\n" +
+                            "«أذونات أخرى» (Other Permissions)\n" +
+                            "ثم تفعيل «العرض في شاشة القفل» (Show on Lock screen).",
+                    color = Color.LightGray,
+                    lineHeight = 22.sp
                 )
             },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        AlarmPermissionHelper.openAppInfoSettings(context)
-                        onDismissOem()
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1B5E20))
-                ) {
-                    Text("فتح الإعدادات")
-                }
-            }
+             confirmButton = {
+                 Button(
+                     onClick = {
+                         AlarmPermissionHelper.clearOemWarningIgnored(context)
+                         AlarmPermissionHelper.openAppInfoSettings(context)
+                         onDismissOem()
+                     },
+                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1B5E20))
+                 ) {
+                     Text("فتح إعدادات التطبيق")
+                 }
+             },
+             dismissButton = {
+                 TextButton(
+                     onClick = {
+                         AlarmPermissionHelper.markOemWarningIgnored(context)
+                         onDismissOem()
+                     }
+                 ) {
+                     Text("تجاهل", color = Color.Gray)
+                 }
+             }
         )
+    }
+}
+
+
+@Composable
+fun PermissionWarningCard(onAction: () -> Unit) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp)
+            .clickable { onAction() },
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF331010)),
+        border = BorderStroke(1.dp, Color.Red.copy(alpha = 0.5f))
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(Icons.Default.Warning, contentDescription = null, tint = Color.Red)
+            Spacer(Modifier.width(12.dp))
+            Column {
+                Text(
+                    "تنبيه: المنبه قد لا يعمل",
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp
+                )
+                Text(
+                    "اضغط هنا لضبط إعدادات شاشة القفل (Xiaomi/Oppo)",
+                    color = Color.LightGray,
+                    fontSize = 12.sp
+                )
+            }
+        }
     }
 }

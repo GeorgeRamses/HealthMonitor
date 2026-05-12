@@ -87,17 +87,17 @@ private fun MainAppScaffold(
             startDestination = "dashboard",
             modifier = Modifier.padding(paddingValues)
         ) {
-            composable("dashboard") { DashboardScreen(navController) }
-            composable("medications") { MedicationsScreen(navController) }
-            composable("health") { HealthScreen(navController) }
-            // legacy routes kept for any deep-links / back-stack entries
-            composable("blood_pressure") { HealthScreen(navController) }
-            composable("symptoms") { HealthScreen(navController) }
-            composable("ai_tools") { AiToolsScreen(navController) }
-            composable("settings") { SettingsScreen(navController) }
-            composable("cases") { CasesScreen(navController) }
-            composable("patients") { PatientsScreen(navController) }
-            composable("medication_reminder") { MedicationReminderScreen(navController) }
+            composable("dashboard")            { DashboardScreen(navController) }
+            composable("medications")           { MedicationsScreen(navController) }
+            composable("health")                { HealthScreen(navController) }
+            composable("blood_pressure")        { HealthScreen(navController) }
+            composable("symptoms")              { HealthScreen(navController) }
+            composable("ai_tools")              { AiToolsScreen(navController) }
+            composable("settings")              { SettingsScreen(navController) }
+            composable("cases")                 { CasesScreen(navController) }
+            composable("patients")              { PatientsScreen(navController) }
+            composable("medication_reminder")   { MedicationReminderScreen(navController) }
+            composable("medication_history")    { MedicationHistoryScreen(navController) }
         }
     }
 }

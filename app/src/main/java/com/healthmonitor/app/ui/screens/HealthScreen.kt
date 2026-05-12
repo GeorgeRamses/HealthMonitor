@@ -11,10 +11,12 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.automirrored.outlined.ShowChart
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.outlined.*
+import androidx.compose.material.icons.outlined.ShowChart
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -64,7 +66,8 @@ fun HealthScreen(
     Scaffold(
         containerColor = HMColor.BgBase,
         floatingActionButton = {
-            if (selectedTab == 3) {
+            // No FAB on lab reports (tab 3) or chart (tab 4)
+            if (selectedTab == 3 || selectedTab == 4) {
                 return@Scaffold
             }
             FloatingActionButton(
@@ -128,12 +131,15 @@ fun HealthScreen(
                             Text("ضغط الدم والأعراض", fontSize = 11.sp, color = HMColor.TextSecondary)
                         }
                     }
-                    Spacer(Modifier.height(HMSpacing.md))
-                    HealthDateNavigator(
-                        dateMillis = selectedDate,
-                        onPrevious = { viewModel.moveSelectedHealthDate(-1) },
-                        onNext = { viewModel.moveSelectedHealthDate(1) }
-                    )
+                    // Date navigator is hidden on the chart tab — it shows full history
+                    if (selectedTab != 4) {
+                        Spacer(Modifier.height(HMSpacing.md))
+                        HealthDateNavigator(
+                            dateMillis = selectedDate,
+                            onPrevious = { viewModel.moveSelectedHealthDate(-1) },
+                            onNext = { viewModel.moveSelectedHealthDate(1) }
+                        )
+                    }
                     Spacer(Modifier.height(HMSpacing.md))
                     HealthTabSelector(selectedTab = selectedTab, onSelect = { selectedTab = it })
                 }
@@ -150,7 +156,11 @@ fun HealthScreen(
                     0 -> BloodPressureContent(viewModel = viewModel, selectedDate = selectedDate)
                     1 -> SymptomsContent(viewModel = viewModel, selectedDate = selectedDate)
                     2 -> BodyTemperatureContent(viewModel = viewModel, selectedDate = selectedDate)
-                    else -> LabReportScreen(viewModel = labReportViewModel)
+                    3 -> LabReportScreen(viewModel = labReportViewModel)
+                    else -> {
+                        val readings by viewModel.bloodPressureReadings.collectAsState()
+                        BloodPressureChartContent(readings = readings)
+                    }
                 }
             }
         }
@@ -187,9 +197,10 @@ fun HealthScreen(
 private fun HealthTabSelector(selectedTab: Int, onSelect: (Int) -> Unit) {
     val tabs = listOf(
         "ضغط الدم" to Icons.Outlined.Favorite,
-        "الأعراض" to Icons.Outlined.HealthAndSafety,
-        "الحرارة" to Icons.Outlined.Thermostat,
-        "تقارير" to Icons.Outlined.Science
+        "الأعراض"  to Icons.Outlined.HealthAndSafety,
+        "الحرارة"  to Icons.Outlined.Thermostat,
+        "تقارير"   to Icons.Outlined.Science,
+        "رسم بياني" to Icons.AutoMirrored.Outlined.ShowChart
     )
     Row(
         modifier = Modifier
@@ -203,10 +214,11 @@ private fun HealthTabSelector(selectedTab: Int, onSelect: (Int) -> Unit) {
         tabs.forEachIndexed { index, (label, icon) ->
             val isSelected = selectedTab == index
             val accentColor = when (index) {
-                0 -> HMColor.RedBright
-                1 -> HMColor.AmberBright
-                2 -> HMColor.CyanBright
-                else -> HMColor.BlueBright
+                0    -> HMColor.RedBright
+                1    -> HMColor.AmberBright
+                2    -> HMColor.CyanBright
+                3    -> HMColor.BlueBright
+                else -> HMColor.GreenBright
             }
             HMPressable(onClick = { onSelect(index) }, modifier = Modifier.weight(1f)) {
                 Box(
@@ -225,20 +237,17 @@ private fun HealthTabSelector(selectedTab: Int, onSelect: (Int) -> Unit) {
                         .padding(vertical = 9.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(5.dp)
-                    ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Icon(
                             icon, null,
-                            tint = if (isSelected) accentColor else HMColor.TextSecondary,
+                            tint     = if (isSelected) accentColor else HMColor.TextSecondary,
                             modifier = Modifier.size(14.dp)
                         )
                         Text(
                             label,
-                            fontSize = 12.sp,
+                            fontSize   = 9.sp,
                             fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
-                            color = if (isSelected) accentColor else HMColor.TextSecondary
+                            color      = if (isSelected) accentColor else HMColor.TextSecondary
                         )
                     }
                 }

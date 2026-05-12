@@ -44,6 +44,14 @@
     <!-- ── Vibration ─────────────────────────────────────────────────────── -->
     <uses-permission android:name="android.permission.VIBRATE"/>
 
+    <!--
+        SYSTEM_ALERT_WINDOW — required to draw overlay windows (pop-ups) while
+        running in the background. This is essential for Xiaomi and other OEM devices
+        to display full-screen alarm notifications. The app needs this permission
+        to ensure alarms display properly on restricted OEM devices.
+    -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
+
     <application
             android:name=".HealthMonitorApplication"
             android:allowBackup="true"
@@ -124,6 +132,22 @@
                 <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED"/>
             </intent-filter>
         </receiver>
+
+        <!--
+            ── FileProvider ────────────────────────────────────────────────────
+            Required for sharing exported report files via ACTION_SEND.
+            The authority must match exactly what ExportViewModel passes to
+            FileProvider.getUriForFile(): "${packageName}.provider"
+        -->
+        <provider
+                android:name="androidx.core.content.FileProvider"
+                android:authorities="${applicationId}.provider"
+                android:exported="false"
+                android:grantUriPermissions="true">
+            <meta-data
+                    android:name="android.support.FILE_PROVIDER_PATHS"
+                    android:resource="@xml/file_provider_paths"/>
+        </provider>
 
     </application>
 

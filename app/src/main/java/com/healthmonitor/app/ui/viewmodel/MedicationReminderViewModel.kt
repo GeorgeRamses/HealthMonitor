@@ -14,7 +14,6 @@ import com.healthmonitor.app.data.repository.HealthMonitorRepository
 import com.healthmonitor.app.ui.design.AlarmPermissionHelper
 import com.healthmonitor.app.util.AlarmScheduler
 import com.healthmonitor.app.util.parseMedicationTimes
-import dagger.hilt.android.internal.Contexts.getApplication
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -24,8 +23,10 @@ class MedicationReminderViewModel @Inject constructor(
     application: Application,
     private val repository: HealthMonitorRepository
 ) : AndroidViewModel(application) {
+
     var showA14Dialog by mutableStateOf(false)
     var showOemDialog by mutableStateOf(false)
+
     fun canScheduleExactAlarms(): Boolean {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return true
         val am = getApplication<Application>()
@@ -45,7 +46,6 @@ class MedicationReminderViewModel @Inject constructor(
         viewModelScope.launch {
             val ctx = getApplication<Application>().applicationContext
             repository.insertMedication(med)
-            // med.id is already a UUID set before insertion
             parseMedicationTimes(med.scheduledTimes).forEach { time ->
                 AlarmScheduler.schedule(ctx, med.name, med.id, time)
             }
@@ -57,16 +57,15 @@ class MedicationReminderViewModel @Inject constructor(
 
         if (AlarmPermissionHelper.needsFullScreenIntentPermission(context)) {
             showA14Dialog = true
-        } else {
-            // إذا كان الهاتف شاومي أو ما شابه، نظهر التنبيه ولكن نكمل الحفظ
-            if (AlarmPermissionHelper.isRestrictedOEM()) {
-                showOemDialog = true
-            }
-            saveMedicationAndSchedule(med)
         }
+        if (AlarmPermissionHelper.needsOemPermission(context)) {
+            showOemDialog = true
+        }
+        // Always save — don't gate saving behind permission dialogs
+        saveMedicationAndSchedule(med)
     }
-}
 
+    // Moved inside the class — was accidentally placed outside the closing brace
     private fun scheduleForMedication(context: Context, med: MedicationEntity) {
         val times = parseMedicationTimes(med.scheduledTimes)
         if (!med.isActive) {
@@ -75,4 +74,4 @@ class MedicationReminderViewModel @Inject constructor(
         }
         times.forEach { AlarmScheduler.schedule(context, med.name, med.id, it) }
     }
-
+}

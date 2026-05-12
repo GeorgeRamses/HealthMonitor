@@ -23,7 +23,6 @@ plugins {
     id("com.google.dagger.hilt.android")
 }
 
-
 ksp {
     arg("room.schemaLocation", "${projectDir}/schemas")
     arg("room.incremental", "true")
@@ -35,24 +34,24 @@ android {
 
     signingConfigs {
         create("release") {
-            storeFile = file("../health_monitor.jks")
+            storeFile     = file("../health_monitor.jks")
             storePassword = "HealthMonitor@2026"
-            keyAlias = "health_monitor_key"
-            keyPassword = "HealthMonitor@2026"
+            keyAlias      = "health_monitor_key"
+            keyPassword   = "HealthMonitor@2026"
         }
     }
 
     defaultConfig {
-        applicationId         = "com.healthmonitor.app"
-        minSdk                = 26
-        targetSdk             = 36
-        versionCode           = 4
-        versionName           = "5.3.4"
+        applicationId             = "com.healthmonitor.app"
+        minSdk                    = 26
+        targetSdk                 = 36
+        versionCode               = 4
+        versionName               = "5.3.5"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        buildConfigField("String", "SUPABASE_URL", "\"https://YOUR_PROJECT.supabase.co\"")
-        buildConfigField("String", "SUPABASE_ANON_KEY", "\"YOUR_ANON_KEY\"")
+
+        // Gemini AI — set GEMINI_API_KEY and optionally GEMINI_MODEL in local.properties
         buildConfigField("String", "GEMINI_API_KEY", buildConfigString(localProperty("GEMINI_API_KEY")))
-        buildConfigField("String", "GEMINI_MODEL", buildConfigString(localProperty("GEMINI_MODEL", "gemini-2.5-flash")))
+        buildConfigField("String", "GEMINI_MODEL",   buildConfigString(localProperty("GEMINI_MODEL", "gemini-2.5-flash")))
     }
 
     buildTypes {
@@ -87,11 +86,12 @@ android {
 }
 
 dependencies {
-    implementation("androidx.compose.ui:ui-text:1.11.0")
+
     // ── Compose BOM ────────────────────────────────────────────────────────
     val composeBom = platform("androidx.compose:compose-bom:2024.09.00")
     implementation(composeBom)
     implementation("androidx.compose.ui:ui")
+    implementation("androidx.compose.ui:ui-text:1.11.0")
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
@@ -121,38 +121,31 @@ dependencies {
     // ── Serialization ──────────────────────────────────────────────────────
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
 
-    // ── Supabase ───────────────────────────────────────────────────────────
-    implementation(platform("io.github.jan-tennert.supabase:bom:2.4.0"))
-    implementation("io.github.jan-tennert.supabase:postgrest-kt")
-    implementation("io.github.jan-tennert.supabase:realtime-kt")
-    // implementation("io.github.jan-tennert.supabase:auth-kt") // Temporarily removed - may not exist in this version
-    // Ktor 3 required for Supabase 3.0.0+
-    val ktorVersion = "2.3.12"
-    implementation("io.ktor:ktor-client-android:$ktorVersion")
-    implementation("io.ktor:ktor-client-core:$ktorVersion")
-
     // ── Hilt ───────────────────────────────────────────────────────────────
     implementation("com.google.dagger:hilt-android:2.51.1")
     ksp("com.google.dagger:hilt-compiler:2.51.1")
     implementation("androidx.hilt:hilt-navigation-compose:1.2.0")
 
-    // ── WorkManager (background sync) ──────────────────────────────────────
+    // ── WorkManager ────────────────────────────────────────────────────────
+    // Kept for future background tasks (alarm verification, export jobs, etc.)
     implementation("androidx.work:work-runtime-ktx:2.11.2")
     implementation("androidx.hilt:hilt-work:1.3.0")
     ksp("androidx.hilt:hilt-compiler:1.3.0")
 
-    // ── ML Kit OCR ────────────────────────────────────────────────────────────
+    // ── Ktor (used directly by GeminiHealthAiService) ──────────────────────
+    val ktorVersion = "2.3.12"
+    implementation("io.ktor:ktor-client-android:$ktorVersion")
+    implementation("io.ktor:ktor-client-core:$ktorVersion")
+
+    // ── ML Kit OCR ─────────────────────────────────────────────────────────
     implementation("com.google.mlkit:text-recognition:16.0.1")
 
-// ── CameraX ───────────────────────────────────────────────────────────────
+    // ── CameraX ────────────────────────────────────────────────────────────
     val cameraVersion = "1.4.2"
-    implementation("androidx.camera:camera-mlkit-vision:${cameraVersion}")
+    implementation("androidx.camera:camera-mlkit-vision:$cameraVersion")
     implementation("androidx.camera:camera-camera2:$cameraVersion")
     implementation("androidx.camera:camera-lifecycle:$cameraVersion")
     implementation("androidx.camera:camera-view:$cameraVersion")
-
-
-
 
     // ── Testing ────────────────────────────────────────────────────────────
     testImplementation("junit:junit:4.13.2")

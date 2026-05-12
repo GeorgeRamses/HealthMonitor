@@ -175,4 +175,169 @@ data class CaseWithMedications(
     val medications: List<MedicationWithSchedules>
 )
 
-// SyncState lives in com.healthmonitor.app.shared.sync.SyncState
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DosageFormType — شكل الدواء + الوحدات المناسبة له
+//
+// كل شكل صيدلاني له:
+//   • emoji       → أيقونة بصرية
+//   • label       → الاسم بالعربي
+//   • units       → قائمة الوحدات الممكنة مرتبة من الأكثر شيوعاً
+//   • defaultUnit → الوحدة الافتراضية اللي بتظهر أول ما يختار الشكل
+// ─────────────────────────────────────────────────────────────────────────────
+
+data class DosageForm(
+    val key: String,
+    val emoji: String,
+    val label: String,
+    val units: List<String>,
+    val defaultUnit: String
+)
+
+object DosageFormType {
+
+    // ── الأشكال الصيدلانية الكاملة ────────────────────────────────────────────
+
+    val TABLET = DosageForm(
+        key         = "tablet",
+        emoji       = "🔴",
+        label       = "قرص",
+        units       = listOf("mg", "mcg", "g", "حبة"),
+        defaultUnit = "mg"
+    )
+
+    val CAPSULE = DosageForm(
+        key         = "capsule",
+        emoji       = "💊",
+        label       = "كبسولة",
+        units       = listOf("mg", "mcg", "g", "حبة"),
+        defaultUnit = "mg"
+    )
+
+    val INJECTION = DosageForm(
+        key         = "injection",
+        emoji       = "💉",
+        label       = "حقنة",
+        units       = listOf("ml", "mg", "mcg", "IU", "وحدة دولية"),
+        defaultUnit = "ml"
+    )
+
+    val INHALER = DosageForm(
+        key         = "inhaler",
+        emoji       = "🫁",
+        label       = "بخاخ / رذاذ",
+        units       = listOf("جرعة", "نفخة", "mcg", "mg"),
+        defaultUnit = "جرعة"
+    )
+
+    val DROPS = DosageForm(
+        key         = "drops",
+        emoji       = "💧",
+        label       = "قطرة",
+        units       = listOf("قطرة", "ml"),
+        defaultUnit = "قطرة"
+    )
+
+    val SYRUP = DosageForm(
+        key         = "syrup",
+        emoji       = "🥤",
+        label       = "شراب / معلق",
+        units       = listOf("ml", "ملعقة صغيرة (5ml)", "ملعقة كبيرة (15ml)"),
+        defaultUnit = "ml"
+    )
+
+    val OINTMENT = DosageForm(
+        key         = "ointment",
+        emoji       = "🧴",
+        label       = "مرهم / كريم / جيل",
+        units       = listOf("سم", "g", "mg"),
+        defaultUnit = "سم"
+    )
+
+    val PATCH = DosageForm(
+        key         = "patch",
+        emoji       = "🩹",
+        label       = "لصقة جلدية",
+        units       = listOf("لصقة", "mg"),
+        defaultUnit = "لصقة"
+    )
+
+    val SUPPOSITORY = DosageForm(
+        key         = "suppository",
+        emoji       = "🫙",
+        label       = "تحميلة",
+        units       = listOf("تحميلة", "mg"),
+        defaultUnit = "تحميلة"
+    )
+
+    val POWDER = DosageForm(
+        key         = "powder",
+        emoji       = "🧂",
+        label       = "مسحوق / كيس",
+        units       = listOf("كيس", "g", "mg"),
+        defaultUnit = "كيس"
+    )
+
+    val SUBLINGUAL = DosageForm(
+        key         = "sublingual",
+        emoji       = "👅",
+        label       = "تحت اللسان",
+        units       = listOf("mg", "mcg", "حبة"),
+        defaultUnit = "mg"
+    )
+
+    val INSULIN = DosageForm(
+        key         = "insulin",
+        emoji       = "🩸",
+        label       = "إنسولين",
+        units       = listOf("وحدة دولية", "IU", "ml"),
+        defaultUnit = "وحدة دولية"
+    )
+
+    val OTHER = DosageForm(
+        key         = "other",
+        emoji       = "💬",
+        label       = "أخرى",
+        units       = listOf("mg", "ml", "mcg", "g", "IU", "حبة", "جرعة", "وحدة"),
+        defaultUnit = "mg"
+    )
+
+    // ── القائمة الكاملة — الترتيب هو ترتيب الظهور في الـ UI ─────────────────
+
+    val all: List<DosageForm> = listOf(
+        TABLET,
+        CAPSULE,
+        INJECTION,
+        INHALER,
+        DROPS,
+        SYRUP,
+        OINTMENT,
+        PATCH,
+        SUPPOSITORY,
+        POWDER,
+        SUBLINGUAL,
+        INSULIN,
+        OTHER
+    )
+
+    // ── Helper: ارجع الـ DosageForm من الـ unit المحفوظ ──────────────────────
+    // مفيد لما بنفتح الـ dialog على دواء موجود — نحاول نخمن الشكل من الوحدة
+
+    fun guessFromUnit(unit: String): DosageForm {
+        val lower = unit.lowercase().trim()
+        return when {
+            lower == "قطرة" || lower == "قطرات"                 -> DROPS
+            lower == "جرعة" || lower == "نفخة"                  -> INHALER
+            lower == "لصقة"                                      -> PATCH
+            lower == "تحميلة"                                    -> SUPPOSITORY
+            lower == "كيس"                                       -> POWDER
+            lower == "سم"                                        -> OINTMENT
+            lower == "ml" && unit != "ml"                        -> SYRUP
+            lower.contains("iu") || lower.contains("وحدة دولية") -> INSULIN
+            lower == "ml"                                        -> INJECTION
+            lower == "mcg" && unit.length < 5                   -> TABLET
+            lower == "mg" || lower == "g" || lower == "حبة"     -> TABLET
+            else                                                 -> OTHER
+        }
+    }
+}
