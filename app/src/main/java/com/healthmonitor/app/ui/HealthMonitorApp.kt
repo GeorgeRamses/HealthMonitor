@@ -4,6 +4,8 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
 import android.os.Build
+import androidx.compose.animation.core.*
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -52,19 +54,29 @@ fun HealthMonitorApp(context: Context) {
         val patients by patientViewModel.getAllPatients().collectAsState(initial = null)
         val activePatientId by patientViewModel.activePatientIdFlow.collectAsState()
 
-        // null means still loading; show nothing until resolved
-        if (patients == null) return@HealthMonitorTheme
-
-        if (patients!!.isEmpty()) {
-            // First-launch: no patients exist → show registration screen
-            PatientRegistrationScreen(
-                onPatientRegistered = { name, age, gender ->
-                    patientViewModel.addPatient(name, age, gender)
-                }
-            )
-        } else {
-            // If no active patient is set, set it to the first patient
-            MainAppScaffold(patientViewModel, caseViewModel)
+        androidx.compose.animation.AnimatedContent(
+            targetState = patients,
+            transitionSpec = {
+                androidx.compose.animation.fadeIn(
+                    tween(300)
+                ) togetherWith androidx.compose.animation.fadeOut(
+                    tween(200)
+                )
+            },
+            label = "app_root"
+        ) { patientList ->
+            when {
+                // Still loading from DB
+                patientList == null -> AppLoadingScreen()
+                // First launch: no patients yet
+                patientList.isEmpty() -> PatientRegistrationScreen(
+                    onPatientRegistered = { name, age, gender ->
+                        patientViewModel.addPatient(name, age, gender)
+                    }
+                )
+                // Normal app flow
+                else -> MainAppScaffold(patientViewModel, caseViewModel)
+            }
         }
     }
 }
@@ -98,11 +110,74 @@ private fun MainAppScaffold(
             composable("patients")              { PatientsScreen(navController) }
             composable("medication_reminder")   { MedicationReminderScreen(navController) }
             composable("medication_history")    { MedicationHistoryScreen(navController) }
+            composable("patient_profile/{id}")  { backStackEntry ->
+                val id = backStackEntry.arguments?.getString("id") ?: return@composable
+                PatientProfileScreen(patientId = id, navController = navController)
+            }
         }
     }
 }
 
-// ── Patient registration (first-launch) ──────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Loading screen — shown while Room DB resolves the patient list on cold start
+// ─────────────────────────────────────────────────────────────────────────────
+
+@Composable
+private fun AppLoadingScreen() {
+    val infiniteTransition = rememberInfiniteTransition(label = "loading_pulse")
+    val alpha by infiniteTransition.animateFloat(
+        initialValue  = 0.3f,
+        targetValue   = 1f,
+        animationSpec = infiniteRepeatable(
+            animation  = tween(900, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "pulse_alpha"
+    )
+
+    Box(
+        modifier          = Modifier
+            .fillMaxSize()
+            .background(HMColor.BgBase),
+        contentAlignment  = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(HMSpacing.lg)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(72.dp)
+                    .clip(RoundedCornerShape(HMRadius.xl))
+                    .background(HMColor.GreenBright.copy(alpha = 0.12f))
+                    .border(1.dp, HMColor.GreenBorder, RoundedCornerShape(HMRadius.xl)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    Icons.Default.HealthAndSafety,
+                    contentDescription = null,
+                    tint     = HMColor.GreenBright.copy(alpha = alpha),
+                    modifier = Modifier.size(36.dp)
+                )
+            }
+            Text(
+                "Health Monitor",
+                fontSize   = 22.sp,
+                fontWeight = FontWeight.Bold,
+                color      = HMColor.TextPrimary.copy(alpha = alpha)
+            )
+            CircularProgressIndicator(
+                color       = HMColor.GreenBright.copy(alpha = alpha),
+                strokeWidth = 2.dp,
+                modifier    = Modifier.size(24.dp)
+            )
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Patient registration (first-launch)
+// ─────────────────────────────────────────────────────────────────────────────
 
 @Composable
 private fun PatientRegistrationScreen(

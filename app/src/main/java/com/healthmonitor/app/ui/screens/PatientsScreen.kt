@@ -13,6 +13,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -39,7 +40,6 @@ fun PatientsScreen(
     val activePatientId by viewModel.activePatientIdFlow.collectAsState()
     var deleteTarget    by remember { mutableStateOf<PatientEntity?>(null) }
     var showAdd         by remember { mutableStateOf(false) }
-
     Scaffold(
         containerColor = HMColor.BgBase,
         floatingActionButton = {
@@ -110,10 +110,11 @@ fun PatientsScreen(
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(HMSpacing.sm)) {
                     items(patients, key = { it.id }) { patient ->
                         PatientCard(
-                            patient  = patient,
-                            isActive = patient.id == activePatientId,
-                            onSelect = { viewModel.setActivePatientId(patient.id) },
-                            onDelete = { deleteTarget = patient }
+                            patient   = patient,
+                            isActive  = patient.id == activePatientId,
+                            onSelect  = { viewModel.setActivePatientId(patient.id) },
+                            onEdit    = { navController.navigate("patient_profile/${patient.id}") },
+                            onDelete  = { deleteTarget = patient }
                         )
                     }
                     item { Spacer(Modifier.height(80.dp)) }
@@ -166,6 +167,7 @@ private fun PatientCard(
     patient: PatientEntity,
     isActive: Boolean,
     onSelect: () -> Unit,
+    onEdit: () -> Unit,
     onDelete: () -> Unit
 ) {
     val accentColor by animateColorAsState(
@@ -280,12 +282,21 @@ private fun PatientCard(
                         backgroundColor = HMColor.GreenBright.copy(alpha = 0.12f)
                     )
                 }
-                IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
-                    Icon(
-                        Icons.Outlined.Delete, "حذف",
-                        tint     = HMColor.RedBright.copy(alpha = 0.7f),
-                        modifier = Modifier.size(16.dp)
-                    )
+                Row {
+                    IconButton(onClick = onEdit, modifier = Modifier.size(32.dp)) {
+                        Icon(
+                            Icons.Outlined.Edit, "تعديل",
+                            tint     = HMColor.BlueBright.copy(alpha = 0.8f),
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                    IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
+                        Icon(
+                            Icons.Outlined.Delete, "حذف",
+                            tint     = HMColor.RedBright.copy(alpha = 0.7f),
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
                 }
             }
         }

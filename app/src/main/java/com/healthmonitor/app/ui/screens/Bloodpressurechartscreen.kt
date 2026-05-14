@@ -5,6 +5,7 @@ import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ShowChart
 import androidx.compose.material.icons.outlined.ShowChart
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -71,7 +72,7 @@ fun BloodPressureChartContent(readings: List<BloodPressureEntity>) {
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        Icons.Outlined.ShowChart, null,
+                        Icons.AutoMirrored.Outlined.ShowChart, null,
                         tint     = HMColor.RedBright,
                         modifier = Modifier.size(14.dp)
                     )

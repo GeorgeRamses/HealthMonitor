@@ -62,6 +62,23 @@
             android:theme="@style/Theme.AppCompat.DayNight.NoActionBar"
             tools:targetApi="31">
 
+        <!--
+            Disable WorkManager's default initializer so we can provide our own
+            Hilt-aware factory via Configuration.Provider in HealthMonitorApplication.
+            Without this, WorkManager initializes itself before Hilt is ready and
+            @HiltWorker injection will crash at runtime.
+        -->
+        <provider
+                android:name="androidx.startup.InitializationProvider"
+                android:authorities="${applicationId}.androidx-startup"
+                android:exported="false"
+                tools:node="merge">
+            <meta-data
+                    android:name="androidx.work.WorkManagerInitializer"
+                    android:value="androidx.startup"
+                    tools:node="remove"/>
+        </provider>
+
         <!-- ── Main launcher activity ──────────────────────────────────────── -->
         <activity
                 android:name=".MainActivity"
@@ -120,6 +137,17 @@
         <receiver
                 android:name=".util.MedicationAlarmReceiver"
                 android:exported="true"
+                android:directBootAware="true"/>
+
+        <!-- ── Missed dose follow-up receiver ──────────────────────────────── -->
+        <!--
+            Fires FOLLOW_UP_DELAY_MINUTES after a dose alarm.
+            If the dose still hasn't been taken, posts a gentle reminder.
+            Not exported — only scheduled internally by MedicationAlarmReceiver.
+        -->
+        <receiver
+                android:name=".util.MissedDoseReceiver"
+                android:exported="false"
                 android:directBootAware="true"/>
 
         <!-- ── Boot receiver (reschedules alarms after reboot) ─────────────── -->

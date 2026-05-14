@@ -67,18 +67,29 @@ class GeminiHealthAiService @Inject constructor() {
 
     private val client = HttpClient(Android) {
         install(HttpTimeout) {
-            requestTimeoutMillis = 120_000
-            connectTimeoutMillis = 15_000
-            socketTimeoutMillis = 60_000
+            requestTimeoutMillis = 180_000  // Increased to 3 minutes for large images
+            connectTimeoutMillis = 30_000   // Increased to 30 seconds
+            socketTimeoutMillis = 120_000   // Increased to 2 minutes
+        }
+        install(HttpRequestRetry) {
+            maxRetries = 3
+            retryIf { request, response ->
+                // Retry on network errors and 5xx server errors
+                response.status.value >= 500 || response.status == HttpStatusCode.RequestTimeout
+            }
+            delayMillis { retry ->
+                // Exponential backoff: 1s, 2s, 4s
+                (1000L * (1L shl retry)).coerceAtMost(5000L)
+            }
         }
     }
 
     // ── Public API ────────────────────────────────────────────────────────
 
     /**
-     * Summarizes a medical report text in simplified Arabic for a patient.
+     * Summarizes a medical report text and/or images in simplified Arabic for a patient.
      */
-    suspend fun summarizeMedicalReportInArabic(reportText: String): String {
+    suspend fun summarizeMedicalReportInArabic(reportText: String, reportImages: List<Bitmap> = emptyList()): String {
         val systemInstruction = """
             أنت مساعد طبي متخصص في شرح التقارير الطبية للمرضى بأسلوب مبسط وواضح.
             
@@ -124,7 +135,9 @@ class GeminiHealthAiService @Inject constructor() {
 
         return generateContent(
             systemInstruction = systemInstruction,
-            userPrompt = userPrompt
+            userPrompt = userPrompt,
+            images = reportImages,
+            mimeType = "image/jpeg"
         )
     }
 
@@ -179,7 +192,7 @@ class GeminiHealthAiService @Inject constructor() {
         return generateContent(
             systemInstruction = systemInstruction,
             userPrompt = userPrompt,
-            image = reportImage,
+            images = listOf(reportImage),
             mimeType = "image/jpeg"
         )
     }
@@ -300,7 +313,7 @@ class GeminiHealthAiService @Inject constructor() {
         val response = generateContent(
             systemInstruction = systemInstruction,
             userPrompt        = userPrompt,
-            image             = image,
+            images            = listOf(image),
             mimeType          = "image/jpeg",
             expectJson        = true
         )
@@ -337,6 +350,7 @@ class GeminiHealthAiService @Inject constructor() {
         systemInstruction: String,
         userPrompt: String,
         image: Bitmap? = null,
+        images: List<Bitmap> = emptyList(),
         mimeType: String? = null,
         expectJson: Boolean = false
     ): String = withContext(Dispatchers.IO) {
@@ -347,7 +361,10 @@ class GeminiHealthAiService @Inject constructor() {
 
         val model = BuildConfig.GEMINI_MODEL.ifBlank { DEFAULT_MODEL }
         val endpoint = "$BASE_URL/models/$model:generateContent?key=$apiKey"
-        val body = buildRequestBody(systemInstruction, userPrompt, image, mimeType, expectJson).toString()
+
+        // Combine single image and images list for backward compatibility
+        val allImages = listOfNotNull(image) + images
+        val body = buildRequestBody(systemInstruction, userPrompt, allImages, mimeType, expectJson).toString()
 
         try {
             val response = client.post(endpoint) {
@@ -367,6 +384,9 @@ class GeminiHealthAiService @Inject constructor() {
             throw IllegalStateException(
                 errMsg.ifBlank { "فشل طلب Gemini: ${e.response.status}" }, e
             )
+        } catch (e: java.io.IOException) {
+            // Handle network errors like "unexpected end of stream"
+            throw IllegalStateException("خطأ في الشبكة: تأكد من اتصالك بالإنترنت وأعد المحاولة. (${e.message})", e)
         } catch (e: IllegalStateException) {
             throw e
         } catch (e: Exception) {
@@ -379,7 +399,7 @@ class GeminiHealthAiService @Inject constructor() {
     private fun buildRequestBody(
         systemInstruction: String,
         userPrompt: String,
-        image: Bitmap?,
+        images: List<Bitmap> = emptyList(),
         mimeType: String?,
         expectJson: Boolean
     ): JsonObject = buildJsonObject {
@@ -391,19 +411,21 @@ class GeminiHealthAiService @Inject constructor() {
             }
         }
 
-        // User turn with optional image
+        // User turn with optional images
         putJsonArray("contents") {
             add(buildJsonObject {
                 put("role", "user")
                 putJsonArray("parts") {
                     add(buildJsonObject { put("text", userPrompt) })
-                    if (image != null && mimeType != null) {
-                        add(buildJsonObject {
-                            putJsonObject("inline_data") {
-                                put("mime_type", mimeType)
-                                put("data", image.toBase64Jpeg())
-                            }
-                        })
+                    if (images.isNotEmpty() && mimeType != null) {
+                        images.forEach { image ->
+                            add(buildJsonObject {
+                                putJsonObject("inline_data") {
+                                    put("mime_type", mimeType)
+                                    put("data", image.toBase64Jpeg())
+                                }
+                            })
+                        }
                     }
                 }
             })
@@ -502,9 +524,19 @@ class GeminiHealthAiService @Inject constructor() {
 
     // ── Helpers ───────────────────────────────────────────────────────────
 
-    private fun Bitmap.toBase64Jpeg(quality: Int = 88): String {
+    private fun Bitmap.toBase64Jpeg(quality: Int = 75): String {
+        // Compress image if it's too large to reduce network issues
+        val compressedBitmap = if (width > 2048 || height > 2048) {
+            val scale = minOf(2048f / width, 2048f / height)
+            val newWidth = (width * scale).toInt()
+            val newHeight = (height * scale).toInt()
+            Bitmap.createScaledBitmap(this, newWidth, newHeight, true)
+        } else {
+            this
+        }
+
         val out = ByteArrayOutputStream()
-        compress(Bitmap.CompressFormat.JPEG, quality, out)
+        compressedBitmap.compress(Bitmap.CompressFormat.JPEG, quality, out)
         return Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP)
     }
 

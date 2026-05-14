@@ -246,7 +246,7 @@ fun SettingsScreen(
         // ── About ─────────────────────────────────────────────────────────
         SettingsSectionHeader(title = "حول التطبيق", icon = Icons.Outlined.Info)
         Spacer(Modifier.height(HMSpacing.sm))
-        SettingsInfoCard("v5.4.0", "الإصدار", Icons.Default.Info)
+        SettingsInfoCard("v5.5.3", "الإصدار", Icons.Default.Info)
         SettingsInfoCard("SQLite — بدون إنترنت", "قاعدة البيانات", Icons.Default.Storage)
         SettingsInfoCard("Gemini AI", "محرك الذكاء الاصطناعي", Icons.Default.AutoAwesome)
 

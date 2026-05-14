@@ -59,12 +59,25 @@ fun AiToolsScreen(
     val scrollState = rememberScrollState()
 
     val reportImagePicker = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.PickVisualMedia()
-    ) { uri ->
-        if (uri == null) return@rememberLauncherForActivityResult
-        val bitmap = uri.decodeBitmap(context)
-        if (bitmap == null) viewModel.reportImageLoadFailed()
-        else viewModel.summarizeReportImage(bitmap, uri.lastPathSegment)
+        contract = ActivityResultContracts.PickMultipleVisualMedia()
+    ) { uris ->
+        if (uris.isEmpty()) return@rememberLauncherForActivityResult
+        val bitmaps = mutableListOf<Bitmap>()
+        val names = mutableListOf<String>()
+
+        uris.forEach { uri ->
+            val bitmap = uri.decodeBitmap(context)
+            if (bitmap != null) {
+                bitmaps.add(bitmap)
+                names.add(uri.lastPathSegment ?: "صورة")
+            }
+        }
+
+        if (bitmaps.isEmpty()) {
+            viewModel.reportImageLoadFailed()
+        } else {
+            viewModel.addReportImages(bitmaps, names)
+        }
     }
 
     Column(
@@ -137,6 +150,7 @@ fun AiToolsScreen(
                             PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
                         )
                     },
+                    onRemoveImage = viewModel::removeReportImage,
                     onSummarize = viewModel::summarizeReport,
                     onClear = viewModel::clear
                 )
@@ -162,6 +176,7 @@ private fun ReportAnalysisSection(
     state: com.healthmonitor.app.ui.viewmodel.AiToolsUiState,
     onTextChange: (String) -> Unit,
     onPickImage: () -> Unit,
+    onRemoveImage: (Int) -> Unit,
     onSummarize: () -> Unit,
     onClear: () -> Unit
 ) {
@@ -176,7 +191,7 @@ private fun ReportAnalysisSection(
             HMSectionHeader("تحليل التقارير الطبية", color = HMColor.BlueBright)
             Spacer(Modifier.height(HMSpacing.sm))
             Text(
-                "الصق نتائج التحاليل أو ارفع صورة التقرير وسيقوم الذكاء الاصطناعي بشرحها بالعربية.",
+                "الصق نتائج التحاليل أو ارفع صور التقرير (يمكن رفع عدة صور) وسيقوم الذكاء الاصطناعي بشرحها بالعربية.",
                 fontSize = 12.sp,
                 color = HMColor.TextSecondary,
                 lineHeight = 18.sp
@@ -199,30 +214,56 @@ private fun ReportAnalysisSection(
 
             // Image picker button
             HMSecondaryButton(
-                text = if (state.isLoading && state.reportText.isBlank()) "جاري تحليل الصورة..." else "📷  رفع صورة تقرير",
+                text = if (state.isLoading && state.selectedBitmaps.isEmpty()) "جاري تحليل الصور..." else "📷  رفع صور تقرير",
                 onClick = onPickImage,
                 enabled = !state.isLoading,
                 color = HMColor.BlueBright,
                 modifier = Modifier.fillMaxWidth()
             )
 
-            state.selectedImageName?.let { name ->
-                Spacer(Modifier.height(HMSpacing.xs))
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(HMSpacing.xs)
-                ) {
-                    Icon(
-                        Icons.Default.CheckCircle,
-                        null,
-                        tint = HMColor.GreenBright,
-                        modifier = Modifier.size(13.dp)
-                    )
-                    Text(
-                        "الصورة المختارة: $name",
-                        color = HMColor.TextSecondary,
-                        fontSize = 11.sp
-                    )
+            // Display selected images with remove buttons
+            if (state.selectedImageNames.isNotEmpty()) {
+                Spacer(Modifier.height(HMSpacing.sm))
+                Column(verticalArrangement = Arrangement.spacedBy(HMSpacing.xs)) {
+                    state.selectedImageNames.forEachIndexed { index, name ->
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(HMRadius.sm))
+                                .background(HMColor.BgOverlay)
+                                .padding(HMSpacing.sm)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(HMSpacing.xs)
+                            ) {
+                                Icon(
+                                    Icons.Default.CheckCircle,
+                                    null,
+                                    tint = HMColor.GreenBright,
+                                    modifier = Modifier.size(13.dp)
+                                )
+                                Text(
+                                    "الصورة ${index + 1}: $name",
+                                    color = HMColor.TextSecondary,
+                                    fontSize = 11.sp
+                                )
+                            }
+                            IconButton(
+                                onClick = { onRemoveImage(index) },
+                                modifier = Modifier.size(24.dp)
+                            ) {
+                                Icon(
+                                    Icons.Outlined.Close,
+                                    contentDescription = "حذف الصورة",
+                                    tint = HMColor.RedBright,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                            }
+                        }
+                    }
                 }
             }
 
@@ -231,16 +272,16 @@ private fun ReportAnalysisSection(
             HMPrimaryButton(
                 text = if (state.isLoading) "جارٍ التحليل..." else "تحليل وشرح بالعربية ✦",
                 onClick = onSummarize,
-                enabled = state.reportText.isNotBlank() && !state.isLoading,
+                enabled = (state.reportText.isNotBlank() || state.selectedImageNames.isNotEmpty()) && !state.isLoading,
                 leadingIcon = Icons.Default.AutoAwesome,
                 color = HMColor.BlueBright
             )
 
-            AnimatedVisibility(visible = state.reportText.isNotBlank() && !state.isLoading) {
+            AnimatedVisibility(visible = (state.reportText.isNotBlank() || state.selectedImageNames.isNotEmpty()) && !state.isLoading) {
                 Column {
                     Spacer(Modifier.height(HMSpacing.sm))
                     HMSecondaryButton(
-                        text = "مسح النص والنتيجة",
+                        text = "مسح النص والصور والنتيجة",
                         onClick = onClear,
                         leadingIcon = Icons.Outlined.Delete,
                         color = HMColor.TextSecondary,

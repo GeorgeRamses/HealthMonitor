@@ -101,7 +101,7 @@ fun MedicineScannerScreen(
     // ── ImageAnalysis use-case (created once) ─────────────────────────────────
     val imageAnalyzer = remember {
         ImageAnalysis.Builder()
-            .setTargetResolution(Size(1280, 720))
+            .setDefaultResolution(Size(1280, 720))
             .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
             .build()
             .also { analysis ->

@@ -79,12 +79,16 @@ class MedicationAlarmReceiver : BroadcastReceiver() {
                         (isSnooze || !isAlreadyTaken(context, medicationId, scheduledTime))
 
                 if (shouldFire) {
-                    // The ONLY correct way to show a full-screen alarm on Android 10+.
-                    // context.startActivity() is blocked from background — DO NOT use it.
                     showAlarmNotification(
                         context, medicationId, medicationName, dosage, scheduledTime
                     )
                     Log.i(TAG, "alarm notification posted for $medicationName at $scheduledTime")
+
+                    // Schedule a follow-up check 1 hour later.
+                    // MissedDoseReceiver will silently exit if the dose is taken by then.
+                    if (!isSnooze) {
+                        MissedDoseReceiver.schedule(context, medicationId, medicationName, scheduledTime)
+                    }
                 } else {
                     if (!alarmsEnabled) {
                         Log.i(TAG, "skipped — alarms globally disabled: $medicationName")

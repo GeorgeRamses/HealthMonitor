@@ -18,11 +18,12 @@ import javax.inject.Inject
 // ─────────────────────────────────────────────────────────────────────────────
 
 data class AiToolsUiState(
-    val reportText: String          = "",
-    val selectedImageName: String?  = null,
-    val summary: String             = "",
-    val isLoading: Boolean          = false,
-    val error: String?              = null
+    val reportText: String              = "",
+    val selectedImageNames: List<String> = emptyList(),
+    val selectedBitmaps: List<Bitmap>   = emptyList(),
+    val summary: String                 = "",
+    val isLoading: Boolean              = false,
+    val error: String?                  = null
 )
 
 data class MedicineInfoUiState(
@@ -58,20 +59,51 @@ class AiToolsViewModel @Inject constructor(
     }
 
     fun reportImageLoadFailed() {
-        _uiState.update { it.copy(error = "تعذّر فتح صورة التقرير. يرجى اختيار صورة أخرى.") }
+        _uiState.update { it.copy(error = "تعذّر فتح صور التقرير. يرجى اختيار صور أخرى.") }
+    }
+
+    fun addReportImages(bitmaps: List<Bitmap>, imageNames: List<String>) {
+        _uiState.update { currentState ->
+            currentState.copy(
+                selectedBitmaps = currentState.selectedBitmaps + bitmaps,
+                selectedImageNames = currentState.selectedImageNames + imageNames,
+                error = null
+            )
+        }
+    }
+
+    fun removeReportImage(index: Int) {
+        _uiState.update { currentState ->
+            val newBitmaps = currentState.selectedBitmaps.toMutableList().apply {
+                if (index in indices) removeAt(index)
+            }
+            val newNames = currentState.selectedImageNames.toMutableList().apply {
+                if (index in indices) removeAt(index)
+            }
+            currentState.copy(
+                selectedBitmaps = newBitmaps,
+                selectedImageNames = newNames
+            )
+        }
+    }
+
+    fun clearReportImages() {
+        _uiState.update { it.copy(selectedBitmaps = emptyList(), selectedImageNames = emptyList()) }
     }
 
     fun summarizeReport() {
         val text = _uiState.value.reportText.trim()
-        if (text.isBlank()) {
-            _uiState.update { it.copy(error = "أدخل نص التقرير أولًا.") }
+        val bitmaps = _uiState.value.selectedBitmaps
+
+        if (text.isBlank() && bitmaps.isEmpty()) {
+            _uiState.update { it.copy(error = "أدخل نص التقرير أو أرفع صور على الأقل.") }
             return
         }
 
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, error = null, summary = "") }
             runCatching {
-                geminiService.summarizeMedicalReportInArabic(text)
+                geminiService.summarizeMedicalReportInArabic(text, bitmaps)
             }.onSuccess { summary ->
                 _uiState.update {
                     it.copy(
@@ -90,35 +122,6 @@ class AiToolsViewModel @Inject constructor(
         }
     }
 
-    fun summarizeReportImage(bitmap: Bitmap, imageName: String? = null) {
-        viewModelScope.launch {
-            _uiState.update {
-                it.copy(
-                    selectedImageName = imageName ?: "صورة تقرير",
-                    isLoading         = true,
-                    error             = null,
-                    summary           = ""
-                )
-            }
-            runCatching {
-                geminiService.summarizeMedicalReportImageInArabic(bitmap)
-            }.onSuccess { summary ->
-                _uiState.update {
-                    it.copy(
-                        summary   = summary.ifBlank { "لم يُرجع الذكاء الاصطناعي ملخصًا واضحًا." },
-                        isLoading = false
-                    )
-                }
-            }.onFailure { error ->
-                _uiState.update {
-                    it.copy(
-                        isLoading = false,
-                        error     = error.message ?: "تعذّر تحليل صورة التقرير."
-                    )
-                }
-            }
-        }
-    }
 
     fun clear() {
         _uiState.value = AiToolsUiState()

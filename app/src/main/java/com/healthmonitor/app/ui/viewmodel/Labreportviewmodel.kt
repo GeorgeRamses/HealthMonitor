@@ -26,7 +26,9 @@ data class LabReportWithItems(
 data class LabReportUiState(
     val isLoading: Boolean = false,
     val error: String? = null,
-    val successMessage: String? = null
+    val successMessage: String? = null,
+    val selectedImageNames: List<String> = emptyList(),
+    val selectedBitmaps: List<Bitmap> = emptyList()
 )
 
 @HiltViewModel
@@ -87,11 +89,16 @@ class LabReportViewModel @Inject constructor(
     }
 
     /**
-     * Scans a lab report image, extracts structured data via Gemini, and persists it.
+     * Scans one or more lab report images, merges the extracted data, and persists it.
      */
-    fun scanAndSaveLabReport(image: Bitmap) {
+    fun scanAndSaveLabReports(images: List<Bitmap>) {
         val pid = patientId ?: run {
             _uiState.value = LabReportUiState(error = "يرجى اختيار مريض أولاً.")
+            return
+        }
+
+        if (images.isEmpty()) {
+            _uiState.value = LabReportUiState(error = "يرجى اختيار صورة واحدة على الأقل.")
             return
         }
 
@@ -99,32 +106,44 @@ class LabReportViewModel @Inject constructor(
             _uiState.value = LabReportUiState(isLoading = true)
 
             runCatching {
-                val structured = geminiService.extractLabReportFromImage(image)
+                // Extract data from all images
+                val allStructured = images.mapIndexed { idx, image ->
+                    geminiService.extractLabReportFromImage(image)
+                }
 
-                if (structured.items.isEmpty()) {
-                    error("لم يتم اكتشاف أي نتائج في الصورة. تأكد من وضوح التقرير.")
+                // Merge all reports into one
+                val mergedItems = mutableListOf<com.healthmonitor.app.data.ai.LabReportItem>()
+                val firstReportName = allStructured.firstOrNull()?.reportName ?: "تقرير طبي"
+                val reportDate = allStructured.firstOrNull()?.reportDate
+
+                allStructured.forEach { structured ->
+                    mergedItems.addAll(structured.items)
+                }
+
+                if (mergedItems.isEmpty()) {
+                    error("لم يتم اكتشاف أي نتائج في الصور. تأكد من وضوح التقارير.")
                 }
 
                 // Parse report date from the extracted "YYYY-MM-DD" string
-                val reportDateMillis = structured.reportDate?.let { dateStr ->
+                val reportDateMillis = reportDate?.let { dateStr ->
                     runCatching {
-                        LocalDate.parse(dateStr, DateTimeFormatter.ISO_LOCAL_DATE)
-                            .atStartOfDay(ZoneId.systemDefault())
+                        java.time.LocalDate.parse(dateStr, java.time.format.DateTimeFormatter.ISO_LOCAL_DATE)
+                            .atStartOfDay(java.time.ZoneId.systemDefault())
                             .toInstant()
                             .toEpochMilli()
                     }.getOrNull()
-                } ?: LocalDate.now().atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
+                } ?: java.time.LocalDate.now().atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
 
                 val report = LabReportEntity(
                     patientId  = pid,
                     caseId     = caseId,
-                    reportName = structured.reportName,
+                    reportName = firstReportName,
                     reportDate = reportDateMillis
                 )
 
                 repository.insertLabReport(report)
 
-                val items = structured.items.map { item ->
+                val items = mergedItems.map { item ->
                     LabReportItemEntity(
                         reportId       = report.id,
                         testItem       = item.testItem,
@@ -137,15 +156,44 @@ class LabReportViewModel @Inject constructor(
                 }
                 repository.insertLabReportItems(items)
 
-                structured.reportName
+                firstReportName
             }.onSuccess { name ->
-                _uiState.value = LabReportUiState(successMessage = "تم حفظ تقرير «$name» بنجاح.")
+                _uiState.value = LabReportUiState(successMessage = "تم حفظ تقرير «$name» بنجاح (من ${images.size} صورة).")
             }.onFailure { e ->
                 _uiState.value = LabReportUiState(
-                    error = e.message ?: "حدث خطأ أثناء معالجة الصورة."
+                    error = e.message ?: "حدث خطأ أثناء معالجة الصور."
                 )
             }
         }
+    }
+
+    fun addReportImages(bitmaps: List<Bitmap>, imageNames: List<String>) {
+        _uiState.value = _uiState.value.copy(
+            selectedBitmaps = _uiState.value.selectedBitmaps + bitmaps,
+            selectedImageNames = _uiState.value.selectedImageNames + imageNames,
+            error = null
+        )
+    }
+
+    fun removeReportImage(index: Int) {
+        val current = _uiState.value
+        val newBitmaps = current.selectedBitmaps.toMutableList().apply {
+            if (index in indices) removeAt(index)
+        }
+        val newNames = current.selectedImageNames.toMutableList().apply {
+            if (index in indices) removeAt(index)
+        }
+        _uiState.value = current.copy(
+            selectedBitmaps = newBitmaps,
+            selectedImageNames = newNames
+        )
+    }
+
+    fun clearReportImages() {
+        _uiState.value = _uiState.value.copy(
+            selectedBitmaps = emptyList(),
+            selectedImageNames = emptyList()
+        )
     }
 
     fun deleteReport(reportId: String) {

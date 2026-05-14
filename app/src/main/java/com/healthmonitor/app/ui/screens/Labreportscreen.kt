@@ -50,12 +50,25 @@ fun LabReportScreen(
     val context          = LocalContext.current
 
     val imagePicker = rememberLauncherForActivityResult(
-        ActivityResultContracts.PickVisualMedia()
-    ) { uri ->
-        if (uri == null) return@rememberLauncherForActivityResult
-        val bmp = uri.decodeBitmapLabReport(context)
-        if (bmp != null) viewModel.scanAndSaveLabReport(bmp)
-        else viewModel.clearState()
+        ActivityResultContracts.PickMultipleVisualMedia()
+    ) { uris ->
+        if (uris.isEmpty()) return@rememberLauncherForActivityResult
+        val bitmaps = mutableListOf<Bitmap>()
+        val names = mutableListOf<String>()
+
+        uris.forEach { uri ->
+            val bitmap = uri.decodeBitmapLabReport(context)
+            if (bitmap != null) {
+                bitmaps.add(bitmap)
+                names.add(uri.lastPathSegment ?: "صورة")
+            }
+        }
+
+        if (bitmaps.isEmpty()) {
+            viewModel.clearState()
+        } else {
+            viewModel.addReportImages(bitmaps, names)
+        }
     }
 
     Column(
@@ -75,14 +88,14 @@ fun LabReportScreen(
             HMSectionHeader("استيراد تقرير مخبري أو تصويري", color = HMColor.BlueBright)
             Spacer(Modifier.height(HMSpacing.sm))
             Text(
-                "ارفع صورة التقرير — سيستخرج الذكاء الاصطناعي جميع القيم والقياسات مع شرح مبسط لكل فحص.",
+                "ارفع صور التقرير (يمكن رفع عدة صور) — سيستخرج الذكاء الاصطناعي جميع القيم والقياسات من كل الصور ويدمجها.",
                 fontSize   = 12.sp,
                 color      = HMColor.TextSecondary,
                 lineHeight = 18.sp
             )
             Spacer(Modifier.height(HMSpacing.md))
             HMPrimaryButton(
-                text        = if (uiState.isLoading) "جارٍ المعالجة..." else "📷  رفع صورة التقرير",
+                text        = if (uiState.isLoading) "جارٍ المعالجة..." else "📷  رفع صور التقرير",
                 onClick     = {
                     imagePicker.launch(
                         PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
@@ -93,6 +106,71 @@ fun LabReportScreen(
                 color       = HMColor.BlueBright,
                 modifier    = Modifier.fillMaxWidth()
             )
+
+            // Display selected images with remove buttons
+            if (uiState.selectedImageNames.isNotEmpty()) {
+                Spacer(Modifier.height(HMSpacing.sm))
+                Column(verticalArrangement = Arrangement.spacedBy(HMSpacing.xs)) {
+                    uiState.selectedImageNames.forEachIndexed { index, name ->
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(HMRadius.sm))
+                                .background(HMColor.BgOverlay)
+                                .padding(HMSpacing.sm)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(HMSpacing.xs)
+                            ) {
+                                Icon(
+                                    Icons.Default.CheckCircle,
+                                    null,
+                                    tint = HMColor.GreenBright,
+                                    modifier = Modifier.size(13.dp)
+                                )
+                                Text(
+                                    "الصورة ${index + 1}: $name",
+                                    color = HMColor.TextSecondary,
+                                    fontSize = 11.sp
+                                )
+                            }
+                            IconButton(
+                                onClick = { viewModel.removeReportImage(index) },
+                                modifier = Modifier.size(24.dp)
+                            ) {
+                                Icon(
+                                    Icons.Outlined.Close,
+                                    contentDescription = "حذف الصورة",
+                                    tint = HMColor.RedBright,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(HMSpacing.md))
+                HMPrimaryButton(
+                    text = if (uiState.isLoading) "جارٍ معالجة ${uiState.selectedImageNames.size} صورة..." else "معالجة وحفظ التقرير ✓",
+                    onClick = { viewModel.scanAndSaveLabReports(uiState.selectedBitmaps) },
+                    enabled = uiState.selectedBitmaps.isNotEmpty() && !uiState.isLoading,
+                    leadingIcon = Icons.Default.CheckCircle,
+                    color = HMColor.GreenBright,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                HMSecondaryButton(
+                    text = "مسح الاختيار",
+                    onClick = { viewModel.clearReportImages() },
+                    enabled = !uiState.isLoading,
+                    leadingIcon = Icons.Outlined.Delete,
+                    color = HMColor.TextSecondary,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
         }
 
         // ── Loading ───────────────────────────────────────────────────────

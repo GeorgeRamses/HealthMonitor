@@ -16,6 +16,7 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.outlined.*
+import androidx.compose.material.icons.outlined.MonitorHeart
 import androidx.compose.material.icons.outlined.ShowChart
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -46,39 +47,35 @@ fun HealthScreen(
 ) {
     var selectedTab by remember { mutableIntStateOf(0) }
     val selectedDate by viewModel.selectedHealthDate.collectAsState()
-    var showAddBpDialog by remember { mutableStateOf(false) }
-    var showAddSymptomDialog by remember { mutableStateOf(false) }
-    var showAddTempDialog by remember { mutableStateOf(false) }
+    var showAddBpDialog       by remember { mutableStateOf(false) }
+    var showAddSymptomDialog   by remember { mutableStateOf(false) }
+    var showAddTempDialog      by remember { mutableStateOf(false) }
+    var showVitalsPicker       by remember { mutableStateOf(false) }   // picker for tab 0
 
+    // Tab 0 = Vital Signs (BP + Temp), 1 = Symptoms, 2 = Lab Reports, 3 = Chart
     val fabColor = when (selectedTab) {
-        0 -> HMColor.RedBright
+        0 -> HMColor.GreenBright
         1 -> HMColor.AmberBright
-        2 -> HMColor.CyanBright
         else -> HMColor.BlueBright
     }
     val fabLabel = when (selectedTab) {
-        0 -> "إضافة قراءة"
+        0 -> "تسجيل قياس"
         1 -> "تسجيل عرض"
-        2 -> "تسجيل حرارة"
         else -> "رفع تقرير"
     }
 
     Scaffold(
         containerColor = HMColor.BgBase,
         floatingActionButton = {
-            // No FAB on lab reports (tab 3) or chart (tab 4)
-            if (selectedTab == 3 || selectedTab == 4) {
+            // No FAB on lab reports (tab 2) or chart (tab 3)
+            if (selectedTab == 2 || selectedTab == 3) {
                 return@Scaffold
             }
             FloatingActionButton(
                 onClick = {
                     when (selectedTab) {
-                        0 -> showAddBpDialog = true
+                        0 -> showVitalsPicker = true   // show BP vs Temp picker
                         1 -> showAddSymptomDialog = true
-                        2 -> showAddTempDialog = true
-                        // tab 3: lab reports upload is handled inside LabReportScreen itself
-                        else -> { /* no-op: LabReportScreen has its own upload button */
-                        }
                     }
                 },
                 containerColor = fabColor,
@@ -128,11 +125,15 @@ fun HealthScreen(
                                 fontWeight = FontWeight.Bold,
                                 color = HMColor.TextPrimary
                             )
-                            Text("ضغط الدم والأعراض", fontSize = 11.sp, color = HMColor.TextSecondary)
+                            Text(
+                                "العلامات الحيوية والأعراض",
+                                fontSize = 11.sp,
+                                color = HMColor.TextSecondary
+                            )
                         }
                     }
-                    // Date navigator is hidden on the chart tab — it shows full history
-                    if (selectedTab != 4) {
+                    // Date navigator is hidden on chart tab (tab 3)
+                    if (selectedTab != 3) {
                         Spacer(Modifier.height(HMSpacing.md))
                         HealthDateNavigator(
                             dateMillis = selectedDate,
@@ -153,10 +154,9 @@ fun HealthScreen(
                 modifier = Modifier.fillMaxSize()
             ) { tab ->
                 when (tab) {
-                    0 -> BloodPressureContent(viewModel = viewModel, selectedDate = selectedDate)
+                    0 -> VitalSignsContent(viewModel = viewModel, selectedDate = selectedDate)
                     1 -> SymptomsContent(viewModel = viewModel, selectedDate = selectedDate)
-                    2 -> BodyTemperatureContent(viewModel = viewModel, selectedDate = selectedDate)
-                    3 -> LabReportScreen(viewModel = labReportViewModel)
+                    2 -> LabReportScreen(viewModel = labReportViewModel)
                     else -> {
                         val readings by viewModel.bloodPressureReadings.collectAsState()
                         BloodPressureChartContent(readings = readings)
@@ -164,6 +164,15 @@ fun HealthScreen(
                 }
             }
         }
+    }
+
+    // ── Vitals type picker ────────────────────────────────────────────────
+    if (showVitalsPicker) {
+        VitalsPickerDialog(
+            onBp   = { showVitalsPicker = false; showAddBpDialog = true },
+            onTemp = { showVitalsPicker = false; showAddTempDialog = true },
+            onDismiss = { showVitalsPicker = false }
+        )
     }
 
     // ── Dialogs ───────────────────────────────────────────────────────────
@@ -196,11 +205,10 @@ fun HealthScreen(
 @Composable
 private fun HealthTabSelector(selectedTab: Int, onSelect: (Int) -> Unit) {
     val tabs = listOf(
-        "ضغط الدم" to Icons.Outlined.Favorite,
-        "الأعراض"  to Icons.Outlined.HealthAndSafety,
-        "الحرارة"  to Icons.Outlined.Thermostat,
-        "تقارير"   to Icons.Outlined.Science,
-        "رسم بياني" to Icons.AutoMirrored.Outlined.ShowChart
+        "العلامات الحيوية" to Icons.Outlined.MonitorHeart,
+        "الأعراض"          to Icons.Outlined.HealthAndSafety,
+        "تقارير"           to Icons.Outlined.Science,
+        "رسم بياني"        to Icons.AutoMirrored.Outlined.ShowChart
     )
     Row(
         modifier = Modifier
@@ -214,11 +222,10 @@ private fun HealthTabSelector(selectedTab: Int, onSelect: (Int) -> Unit) {
         tabs.forEachIndexed { index, (label, icon) ->
             val isSelected = selectedTab == index
             val accentColor = when (index) {
-                0    -> HMColor.RedBright
+                0    -> HMColor.GreenBright
                 1    -> HMColor.AmberBright
-                2    -> HMColor.CyanBright
-                3    -> HMColor.BlueBright
-                else -> HMColor.GreenBright
+                2    -> HMColor.BlueBright
+                else -> HMColor.CyanBright
             }
             HMPressable(onClick = { onSelect(index) }, modifier = Modifier.weight(1f)) {
                 Box(
@@ -231,8 +238,7 @@ private fun HealthTabSelector(selectedTab: Int, onSelect: (Int) -> Unit) {
                                 1.dp,
                                 accentColor.copy(alpha = 0.35f),
                                 RoundedCornerShape(HMRadius.xs)
-                            )
-                            else Modifier
+                            ) else Modifier
                         )
                         .padding(vertical = 9.dp),
                     contentAlignment = Alignment.Center
@@ -257,15 +263,19 @@ private fun HealthTabSelector(selectedTab: Int, onSelect: (Int) -> Unit) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Blood Pressure — display only
+// Vital Signs — merged BP + Temperature tab
 // ─────────────────────────────────────────────────────────────────────────────
 
 @Composable
-private fun BloodPressureContent(viewModel: DashboardViewModel, selectedDate: Long) {
-    val allReadings by viewModel.bloodPressureReadings.collectAsState()
-    val readings = remember(allReadings, selectedDate) {
-        allReadings.filter { it.date == selectedDate }
-    }
+private fun VitalSignsContent(viewModel: DashboardViewModel, selectedDate: Long) {
+    val allBpReadings   by viewModel.bloodPressureReadings.collectAsState()
+    val allTempReadings by viewModel.bodyTemperatureReadings.collectAsState()
+
+    val bpReadings   = remember(allBpReadings, selectedDate)   { allBpReadings.filter   { it.date == selectedDate } }
+    val tempReadings = remember(allTempReadings, selectedDate) { allTempReadings.filter { it.date == selectedDate } }
+
+    var deleteBpTarget   by remember { mutableStateOf<BloodPressureEntity?>(null) }
+    var deleteTempTarget by remember { mutableStateOf<com.healthmonitor.app.data.local.entities.BodyTemperatureEntity?>(null) }
 
     Column(
         modifier = Modifier
@@ -274,23 +284,173 @@ private fun BloodPressureContent(viewModel: DashboardViewModel, selectedDate: Lo
             .padding(horizontal = HMSpacing.lg)
     ) {
         Spacer(Modifier.height(HMSpacing.md))
-        HMSectionHeader("سجل القراءات", color = HMColor.RedBright)
+
+        // ── Blood pressure section ────────────────────────────────────────
+        HMSectionHeader("ضغط الدم", color = HMColor.RedBright)
         Spacer(Modifier.height(HMSpacing.sm))
 
-        if (readings.isEmpty()) {
-            HMEmptyState(emoji = "🫀", title = "لا توجد قراءات", subtitle = "اضغط + لإضافة قراءة جديدة")
+        if (bpReadings.isEmpty()) {
+            HMEmptyState(emoji = "🫀", title = "لا توجد قراءات", subtitle = "اضغط + لإضافة قراءة")
         } else {
-            readings.forEach { r ->
-                HealthBPReadingCard(r)
+            bpReadings.forEach { r ->
+                HealthBPReadingCard(r, onDelete = { deleteBpTarget = r })
                 Spacer(Modifier.height(HMSpacing.sm))
             }
         }
+
+        Spacer(Modifier.height(HMSpacing.lg))
+
+        // ── Temperature section ───────────────────────────────────────────
+        HMSectionHeader("درجة الحرارة", color = HMColor.CyanBright)
+        Spacer(Modifier.height(HMSpacing.sm))
+
+        if (tempReadings.isEmpty()) {
+            HMEmptyState(emoji = "🌡️", title = "لا توجد قراءات", subtitle = "اضغط + لإضافة قراءة")
+        } else {
+            tempReadings.forEach { r ->
+                BodyTemperatureCard(r, onDelete = { deleteTempTarget = r })
+                Spacer(Modifier.height(HMSpacing.sm))
+            }
+        }
+
         Spacer(Modifier.height(80.dp))
+    }
+
+    // ── Delete BP ─────────────────────────────────────────────────────────
+    deleteBpTarget?.let { r ->
+        HMDialog(
+            onDismiss           = { deleteBpTarget = null },
+            title               = "حذف القراءة",
+            confirmText         = "حذف",
+            onConfirm           = { viewModel.deleteBloodPressure(r); deleteBpTarget = null },
+            dismissText         = "إلغاء",
+            confirmColor        = HMColor.RedBright,
+            confirmContentColor = Color.White
+        ) {
+            Text("هل تريد حذف قراءة ضغط الدم هذه؟", fontSize = 13.sp, color = HMColor.TextSecondary)
+        }
+    }
+
+    // ── Delete temperature ────────────────────────────────────────────────
+    deleteTempTarget?.let { r ->
+        HMDialog(
+            onDismiss           = { deleteTempTarget = null },
+            title               = "حذف القراءة",
+            confirmText         = "حذف",
+            onConfirm           = { viewModel.deleteBodyTemperature(r); deleteTempTarget = null },
+            dismissText         = "إلغاء",
+            confirmColor        = HMColor.RedBright,
+            confirmContentColor = Color.White
+        ) {
+            Text("هل تريد حذف قراءة درجة الحرارة هذه؟", fontSize = 13.sp, color = HMColor.TextSecondary)
+        }
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Vitals picker dialog — lets user choose BP or Temperature when tapping FAB
+// ─────────────────────────────────────────────────────────────────────────────
+
 @Composable
-private fun HealthBPReadingCard(r: BloodPressureEntity) {
+private fun VitalsPickerDialog(
+    onBp: () -> Unit,
+    onTemp: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor   = HMColor.BgElevated,
+        shape            = RoundedCornerShape(HMRadius.lg),
+        title = {
+            Text(
+                "إضافة قياس",
+                fontWeight = FontWeight.SemiBold,
+                color      = HMColor.TextPrimary
+            )
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(HMSpacing.sm)) {
+                // BP option
+                HMPressable(onClick = onBp) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(HMRadius.sm))
+                            .background(HMColor.RedBright.copy(alpha = 0.08f))
+                            .border(1.dp, HMColor.RedBright.copy(alpha = 0.3f), RoundedCornerShape(HMRadius.sm))
+                            .padding(HMSpacing.md),
+                        verticalAlignment     = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(HMSpacing.md)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(RoundedCornerShape(HMRadius.sm))
+                                .background(HMColor.RedBright.copy(alpha = 0.15f)),
+                            contentAlignment = Alignment.Center
+                        ) { Text("🫀", fontSize = 20.sp) }
+                        Column {
+                            Text(
+                                "ضغط الدم",
+                                fontSize   = 14.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color      = HMColor.TextPrimary
+                            )
+                            Text(
+                                "تسجيل قراءة ضغط الدم والنبض والأكسجين",
+                                fontSize = 11.sp,
+                                color    = HMColor.TextSecondary
+                            )
+                        }
+                    }
+                }
+                // Temperature option
+                HMPressable(onClick = onTemp) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(HMRadius.sm))
+                            .background(HMColor.CyanBright.copy(alpha = 0.08f))
+                            .border(1.dp, HMColor.CyanBright.copy(alpha = 0.3f), RoundedCornerShape(HMRadius.sm))
+                            .padding(HMSpacing.md),
+                        verticalAlignment     = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(HMSpacing.md)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(RoundedCornerShape(HMRadius.sm))
+                                .background(HMColor.CyanBright.copy(alpha = 0.15f)),
+                            contentAlignment = Alignment.Center
+                        ) { Text("🌡️", fontSize = 20.sp) }
+                        Column {
+                            Text(
+                                "درجة الحرارة",
+                                fontSize   = 14.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color      = HMColor.TextPrimary
+                            )
+                            Text(
+                                "تسجيل درجة حرارة الجسم",
+                                fontSize = 11.sp,
+                                color    = HMColor.TextSecondary
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("إلغاء", color = HMColor.TextSecondary)
+            }
+        }
+    )
+}
+
+@Composable
+private fun HealthBPReadingCard(r: BloodPressureEntity, onDelete: () -> Unit = {}) {
     val (statusLabel, statusColor) = when {
         r.systolic < 120 && r.diastolic < 80 -> "طبيعي" to HMColor.GreenBright
         r.systolic < 140 && r.diastolic < 90 -> "مرتفع قليلاً" to HMColor.AmberBright
@@ -325,9 +485,19 @@ private fun HealthBPReadingCard(r: BloodPressureEntity) {
             Column(horizontalAlignment = Alignment.End) {
                 HMBadge(text = statusLabel, color = statusColor, backgroundColor = statusColor.copy(alpha = 0.1f))
                 Spacer(Modifier.height(4.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(HMSpacing.md)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(HMSpacing.sm)
+                ) {
                     r.pulse?.let { Text("💓 $it bpm", fontSize = 11.sp, color = HMColor.TextSecondary) }
                     r.oxygenSaturation?.let { Text("🫁 $it%", fontSize = 11.sp, color = HMColor.TextSecondary) }
+                    IconButton(onClick = onDelete, modifier = Modifier.size(28.dp)) {
+                        Icon(
+                            Icons.Outlined.Delete, "حذف",
+                            tint     = HMColor.RedBright.copy(alpha = 0.6f),
+                            modifier = Modifier.size(15.dp)
+                        )
+                    }
                 }
             }
         }
@@ -856,53 +1026,6 @@ private fun HealthDateNavigator(dateMillis: Long, onPrevious: () -> Unit, onNext
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Body Temperature — display
-// ─────────────────────────────────────────────────────────────────────────────
-
-@Composable
-private fun BodyTemperatureContent(viewModel: DashboardViewModel, selectedDate: Long) {
-    val allReadings by viewModel.bodyTemperatureReadings.collectAsState()
-    val readings = remember(allReadings, selectedDate) {
-        allReadings.filter { it.date == selectedDate }
-    }
-    var deleteTarget by remember { mutableStateOf<com.healthmonitor.app.data.local.entities.BodyTemperatureEntity?>(null) }
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = HMSpacing.lg)
-    ) {
-        Spacer(Modifier.height(HMSpacing.md))
-        HMSectionHeader("قراءات درجة الحرارة", color = HMColor.CyanBright)
-        Spacer(Modifier.height(HMSpacing.sm))
-
-        if (readings.isEmpty()) {
-            HMEmptyState(emoji = "🌡️", title = "لا توجد قراءات", subtitle = "اضغط + لإضافة قراءة")
-        } else {
-            readings.forEach { r ->
-                BodyTemperatureCard(r, onDelete = { deleteTarget = r })
-                Spacer(Modifier.height(HMSpacing.sm))
-            }
-        }
-        Spacer(Modifier.height(80.dp))
-    }
-
-    deleteTarget?.let { r ->
-        HMDialog(
-            onDismiss = { deleteTarget = null },
-            title = "حذف القراءة",
-            confirmText = "حذف",
-            onConfirm = { viewModel.deleteBodyTemperature(r); deleteTarget = null },
-            dismissText = "إلغاء",
-            confirmColor = HMColor.RedBright,
-            confirmContentColor = Color.White
-        ) {
-            Text("هل تريد حذف هذه القراءة؟", fontSize = 13.sp, color = HMColor.TextSecondary)
-        }
-    }
-}
 
 @Composable
 private fun BodyTemperatureCard(
