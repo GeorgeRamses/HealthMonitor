@@ -18,37 +18,29 @@
         notification's setFullScreenIntent() to actually promote to a full-screen
         alarm UI. Without this the notification stays in the shade as a heads-up
         only, and the alarm activity is never launched from the notification path.
+
+        On Android 14+ (API 34+) this permission must ALSO be granted by the user
+        at runtime via Settings → Special app access → Alarms & reminders.
+        The app checks canUseFullScreenIntent() and prompts accordingly.
     -->
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT"/>
 
     <!-- ── Alarms ─────────────────────────────────────────────────────────── -->
-    <!--
-        SCHEDULE_EXACT_ALARM — required on Android 12+ to schedule exact alarms
-        via AlarmManager.setExactAndAllowWhileIdle / setAlarmClock.
-    -->
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
-
-    <!--
-        USE_EXACT_ALARM — Android 13+ alternative that does NOT require a runtime
-        permission dialog (granted automatically for alarm/clock apps).
-        Declaring both lets the system pick the right one per API level.
-    -->
     <uses-permission android:name="android.permission.USE_EXACT_ALARM"/>
 
     <!-- ── Boot ───────────────────────────────────────────────────────────── -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
 
-    <!-- ── Wake lock (keeps CPU alive long enough to play alarm sound) ────── -->
+    <!-- ── Wake lock ──────────────────────────────────────────────────────── -->
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
 
     <!-- ── Vibration ─────────────────────────────────────────────────────── -->
     <uses-permission android:name="android.permission.VIBRATE"/>
 
     <!--
-        SYSTEM_ALERT_WINDOW — required to draw overlay windows (pop-ups) while
-        running in the background. This is essential for Xiaomi and other OEM devices
-        to display full-screen alarm notifications. The app needs this permission
-        to ensure alarms display properly on restricted OEM devices.
+        SYSTEM_ALERT_WINDOW — required on Xiaomi/OPPO/Vivo for full-screen alarm
+        display over other apps and the lock screen.
     -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
 
@@ -65,8 +57,6 @@
         <!--
             Disable WorkManager's default initializer so we can provide our own
             Hilt-aware factory via Configuration.Provider in HealthMonitorApplication.
-            Without this, WorkManager initializes itself before Hilt is ready and
-            @HiltWorker injection will crash at runtime.
         -->
         <provider
                 android:name="androidx.startup.InitializationProvider"
@@ -92,65 +82,71 @@
 
         <!--
             ── MedicationAlarmActivity ─────────────────────────────────────────
-            This activity is launched by MedicationAlarmReceiver when a dose is due.
-            It must be declared here for Android to accept startActivity() calls from
-            a BroadcastReceiver context, and for the lock-screen / screen-on attributes
-            to take effect at install time.
 
-            Key attributes explained:
-              android:showOnLockScreen="true"
-                  Tells the WindowManager this activity may appear over the lock screen.
-                  Works in tandem with setShowWhenLocked(true) called in onCreate().
+            android:showWhenLocked="true"
+                API 27+ attribute. Renders this window over a SECURE lock screen
+                (PIN/pattern/fingerprint) without requiring authentication.
+                Works in tandem with setShowWhenLocked(true) in onCreate().
+                Both the manifest attribute AND the programmatic call are needed
+                for full OEM coverage (MIUI/ColorOS only respect the manifest).
 
-              android:turnScreenOn="true"
-                  Asks the PowerManager to wake the display when this activity starts.
-                  Works in tandem with setTurnScreenOn(true) called in onCreate().
+            android:showOnLockScreen="true"
+                Older OEM alias for showWhenLocked. Kept for Xiaomi/OPPO compat.
 
-              android:launchMode="singleInstance"
-                  Gives the alarm its own back-stack task. Without this, launching the
-                  alarm while the main app is in the foreground re-uses the existing task
-                  and the window flags are ignored because the window is already visible.
+            android:turnScreenOn="true"
+                API 27+ attribute. Wakes the display when this activity starts.
+                Works in tandem with setTurnScreenOn(true) in onCreate().
 
-              android:excludeFromRecents="true"
-                  Prevents the alarm screen from appearing in the recents list after it
-                  is dismissed — keeps the task switcher clean.
+            android:launchMode="singleInstance"
+                Gives the alarm its own isolated task. Without this, the alarm
+                launched while the main app is open re-uses the existing task
+                and window flags are silently ignored.
 
-              android:directBootAware="true"
-                  Allows the activity to start before the user has unlocked the device
-                  after a reboot (required for alarms scheduled via Direct Boot).
+            android:excludeFromRecents="true"
+                Keeps the task switcher clean after the alarm is dismissed.
+
+            android:directBootAware="true"
+                Allows the activity to start before first unlock after reboot.
+
+            android:screenOrientation="portrait"
+                Prevents rotation from restarting the sound/vibration cycle.
         -->
         <activity
                 android:name=".util.MedicationAlarmActivity"
                 android:exported="false"
+                android:showWhenLocked="true"
                 android:showOnLockScreen="true"
                 android:turnScreenOn="true"
                 android:launchMode="singleInstance"
                 android:excludeFromRecents="true"
-                android:directBootAware="true"/>
+                android:directBootAware="true"
+                android:screenOrientation="portrait"/>
 
         <!-- ── Alarm broadcast receiver ────────────────────────────────────── -->
-        <!--
-            android:directBootAware="true" — allows the receiver to fire before the
-            user has unlocked the device after a reboot, so alarms scheduled during
-            Direct Boot are delivered correctly.
-        -->
         <receiver
                 android:name=".util.MedicationAlarmReceiver"
                 android:exported="true"
                 android:directBootAware="true"/>
 
-        <!-- ── Missed dose follow-up receiver ──────────────────────────────── -->
+        <!-- ── Notification tap receiver ───────────────────────────────────── -->
         <!--
-            Fires FOLLOW_UP_DELAY_MINUTES after a dose alarm.
-            If the dose still hasn't been taken, posts a gentle reminder.
-            Not exported — only scheduled internally by MedicationAlarmReceiver.
+            Handles taps on medication alarm notifications.
+            Cancels the notification first, then opens MainActivity.
+            This is what makes the notification disappear when the user taps it —
+            Android does not auto-cancel ongoing notifications via contentIntent.
+            Not exported — only used internally via PendingIntent.getBroadcast().
         -->
+        <receiver
+                android:name=".util.NotificationTapReceiver"
+                android:exported="false"/>
+
+        <!-- ── Missed dose follow-up receiver ──────────────────────────────── -->
         <receiver
                 android:name=".util.MissedDoseReceiver"
                 android:exported="false"
                 android:directBootAware="true"/>
 
-        <!-- ── Boot receiver (reschedules alarms after reboot) ─────────────── -->
+        <!-- ── Boot receiver ───────────────────────────────────────────────── -->
         <receiver
                 android:name=".util.BootReceiver"
                 android:exported="true"
@@ -161,12 +157,7 @@
             </intent-filter>
         </receiver>
 
-        <!--
-            ── FileProvider ────────────────────────────────────────────────────
-            Required for sharing exported report files via ACTION_SEND.
-            The authority must match exactly what ExportViewModel passes to
-            FileProvider.getUriForFile(): "${packageName}.provider"
-        -->
+        <!-- ── FileProvider ────────────────────────────────────────────────── -->
         <provider
                 android:name="androidx.core.content.FileProvider"
                 android:authorities="${applicationId}.provider"
@@ -180,3 +171,13 @@
     </application>
 
 </manifest>
+
+
+
+
+
+
+
+
+
+

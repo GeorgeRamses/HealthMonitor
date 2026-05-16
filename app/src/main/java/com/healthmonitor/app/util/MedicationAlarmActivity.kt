@@ -1,6 +1,5 @@
 package com.healthmonitor.app.util
 
-import android.app.KeyguardManager
 import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
@@ -47,38 +46,39 @@ import javax.inject.Inject
 /**
  * Full-screen alarm activity that appears OVER the lock screen.
  *
+ * ── FIX SUMMARY ──────────────────────────────────────────────────────────────
+ *
+ * 1. REMOVED duplicate acquireWakeLock() call in onCreate().
+ *    The original code called it twice (before window flags AND after them).
+ *    The second call was a bug — it tried to re-acquire an already-held lock
+ *    which on some Samsung/Xiaomi devices causes the second acquire to block
+ *    briefly and delay the window flags from taking effect before super.onCreate().
+ *
+ * 2. REMOVED FLAG_ACTIVITY_NO_USER_ACTION from createIntent().
+ *    This flag tells Android "don't count this as a user interaction", which
+ *    suppresses the screen-wakeup side-effects on Pixel and OnePlus devices.
+ *    The net result was the screen stayed off even when the alarm fired.
+ *
+ * 3. ADDED android:showWhenLocked + android:turnScreenOn in the manifest
+ *    (see AndroidManifest.xml). The programmatic setShowWhenLocked() calls are
+ *    kept here as well — both are required because some OEMs (MIUI, ColorOS)
+ *    only respect one or the other.
+ *
+ * 4. ADDED canUseFullScreenIntent() fallback for Android 14+.
+ *    On API 34+, USE_FULL_SCREEN_INTENT requires explicit user grant via
+ *    Settings. If the permission is missing the notification never promotes to
+ *    full-screen. We now detect this and call startActivity() directly as a
+ *    fallback so the alarm still appears when the screen is already on.
+ *
  * ── HOW LOCK SCREEN DISPLAY WORKS ───────────────────────────────────────────
  *
- * There are two distinct lock screen scenarios:
+ *  A) INSECURE lock (swipe only):
+ *     FLAG_DISMISS_KEYGUARD dismisses it and shows the activity directly.
  *
- *  A) INSECURE lock (swipe only, no PIN/pattern/fingerprint):
- *     FLAG_DISMISS_KEYGUARD dismisses it entirely and shows the activity.
- *
- *  B) SECURE lock (PIN / pattern / fingerprint / face):
- *     FLAG_DISMISS_KEYGUARD does NOTHING — the system refuses to bypass
- *     security without user authentication.
- *     The correct solution is setShowWhenLocked(true) which renders the
- *     activity ON TOP OF the lock screen without dismissing it. The user
- *     sees the alarm, taps "Taken", and the device stays locked. This is
- *     exactly how the Android Clock alarm and Google Calendar reminders work.
- *
- * ── WHY requestDismissKeyguard() IS NOT USED ─────────────────────────────────
- *     requestDismissKeyguard() asks the system to fully unlock the device.
- *     On a secure lock screen it shows the PIN/pattern/face prompt first —
- *     which means the user must authenticate before they even see the alarm.
- *     That is the opposite of what we want. We want the alarm visible
- *     immediately, and the device can stay locked.
- *
- * ── WHAT setShowWhenLocked(true) DOES ────────────────────────────────────────
- *     API 27+ (Android 8.1+): The activity window is drawn over the keyguard.
- *     The lock screen is still active behind it — but the alarm is fully
- *     interactive on top. The user can tap Taken/Snooze/Dismiss without
- *     unlocking. After they dismiss the alarm the lock screen reappears.
- *     This is the correct, secure, user-friendly behavior.
- *
- * ── PRE-API-27 FALLBACK ───────────────────────────────────────────────────────
- *     FLAG_SHOW_WHEN_LOCKED does the same thing via the window flags API.
- *     Both are set here for maximum compatibility.
+ *  B) SECURE lock (PIN / pattern / fingerprint):
+ *     FLAG_DISMISS_KEYGUARD has no effect. setShowWhenLocked(true) renders
+ *     the activity ON TOP of the lock screen — the user sees and interacts
+ *     with the alarm without unlocking. This matches Clock app behavior.
  */
 @AndroidEntryPoint
 class MedicationAlarmActivity : ComponentActivity() {
@@ -100,18 +100,18 @@ class MedicationAlarmActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
 
-        // ── 1. Acquire WakeLock before super.onCreate() ───────────────────────
+        // ── 1. Acquire WakeLock ONCE before super.onCreate() ──────────────────
         // ACQUIRE_CAUSES_WAKEUP physically turns the screen on.
-        // Must be called BEFORE super.onCreate() on Samsung/Xiaomi/OPPO.
+        // Must be called BEFORE window flags and super.onCreate() on Samsung/Xiaomi/OPPO.
+        // FIX: Only called once here. The duplicate call that was below window.addFlags()
+        // has been removed — it caused a race on some devices.
         acquireWakeLock()
 
         // ── 2. Window flags before super.onCreate() ───────────────────────────
-        // FLAG_SHOW_WHEN_LOCKED  → draw this window over the keyguard (all APIs)
-        // FLAG_TURN_SCREEN_ON    → turn the display on when this activity starts
-        // FLAG_KEEP_SCREEN_ON    → keep the display on while activity is visible
-        // FLAG_DISMISS_KEYGUARD  → dismiss INSECURE keyguard (swipe-only locks)
-        //                          Has no effect on secure (PIN/pattern) locks —
-        //                          setShowWhenLocked handles those instead.
+        // FLAG_SHOW_WHEN_LOCKED  → draw window over keyguard (deprecated API 27 fallback)
+        // FLAG_TURN_SCREEN_ON    → turn display on (deprecated API 27 fallback)
+        // FLAG_KEEP_SCREEN_ON    → keep display on while visible
+        // FLAG_DISMISS_KEYGUARD  → dismiss INSECURE keyguard only (swipe-to-unlock)
         @Suppress("DEPRECATION")
         window.addFlags(
             WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED  or
@@ -119,17 +119,17 @@ class MedicationAlarmActivity : ComponentActivity() {
                     WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON    or
                     WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD
         )
-        acquireWakeLock()
 
         super.onCreate(savedInstanceState)
 
         // ── 3. Modern API equivalents (API 27+) ───────────────────────────────
-        // setShowWhenLocked(true) is the KEY call that makes the activity appear
-        // over a secure (PIN/pattern/fingerprint) lock screen without requiring
-        // the user to authenticate first. This is what was missing before.
+        // setShowWhenLocked(true) — KEY call for rendering over SECURE lock screens
+        // (PIN/pattern/fingerprint) without requiring authentication first.
+        // setTurnScreenOn(true)  — modern equivalent of FLAG_TURN_SCREEN_ON.
+        // Both the manifest attributes AND these calls are needed for full OEM coverage.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-            setShowWhenLocked(true)   // SHOW OVER lock screen (not bypass it)
-            setTurnScreenOn(true)     // Turn display on
+            setShowWhenLocked(true)
+            setTurnScreenOn(true)
         }
 
         // ── 4. Read intent extras and start alarm ─────────────────────────────
@@ -171,7 +171,7 @@ class MedicationAlarmActivity : ComponentActivity() {
 
     // ── onNewIntent ───────────────────────────────────────────────────────────
     // Fired when launchMode=singleInstance and the activity is already running.
-    // E.g. the user taps the heads-up banner while screen is on and alarm is open.
+    // E.g. the user taps the heads-up banner while the screen is on.
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
@@ -195,14 +195,15 @@ class MedicationAlarmActivity : ComponentActivity() {
 
     private fun acquireWakeLock() {
         try {
+            if (wakeLock?.isHeld == true) return   // guard against accidental double-acquire
             val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
             @Suppress("DEPRECATION")
             wakeLock = pm.newWakeLock(
                 PowerManager.FULL_WAKE_LOCK        or
-                        PowerManager.ACQUIRE_CAUSES_WAKEUP or   // ← physically wakes the display
+                        PowerManager.ACQUIRE_CAUSES_WAKEUP or   // physically wakes the display
                         PowerManager.ON_AFTER_RELEASE,
                 "HealthMonitor:MedicationAlarm"
-            ).also { it.acquire(3 * 60 * 1000L) }       // 3 min ceiling
+            ).also { it.acquire(3 * 60 * 1000L) }       // 3-minute ceiling
         } catch (e: Exception) {
             android.util.Log.e(TAG, "WakeLock acquire failed: ${e.message}")
         }
@@ -334,8 +335,10 @@ class MedicationAlarmActivity : ComponentActivity() {
             dosage: String,
             scheduledTime: String
         ) = Intent(context, MedicationAlarmActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK       or
-                    Intent.FLAG_ACTIVITY_NO_USER_ACTION or
+            // FIX: Removed FLAG_ACTIVITY_NO_USER_ACTION — this flag suppresses the
+            // screen-wakeup side-effects on Pixel and OnePlus devices, causing the
+            // screen to stay off even though the alarm fired correctly.
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or
                     Intent.FLAG_ACTIVITY_CLEAR_TOP
             putExtra(MedicationAlarmReceiver.EXTRA_MEDICATION_ID,   medicationId)
             putExtra(MedicationAlarmReceiver.EXTRA_MEDICATION_NAME, medicationName)
@@ -363,7 +366,7 @@ private fun AlarmScreen(
     val dosage         by dosageState
     val scheduledTime  by scheduledTimeState
 
-    // Auto-snooze after 2 minutes if ignored
+    // Auto-snooze after 2 minutes if the user ignores the alarm
     LaunchedEffect(Unit) {
         delay(120_000L)
         onSnooze()
@@ -453,9 +456,11 @@ private fun AlarmScreen(
 
             Button(
                 onClick  = onTaken,
-                modifier = Modifier.fillMaxWidth().height(60.dp),
-                shape    = RoundedCornerShape(18.dp),
-                colors   = ButtonDefaults.buttonColors(containerColor = Color(0xFF1B5E20))
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(60.dp),
+                shape  = RoundedCornerShape(18.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1B5E20))
             ) {
                 Text(
                     "✓   تم أخذ الجرعة",
@@ -467,9 +472,11 @@ private fun AlarmScreen(
 
             OutlinedButton(
                 onClick  = onSnooze,
-                modifier = Modifier.fillMaxWidth().height(54.dp),
-                shape    = RoundedCornerShape(18.dp),
-                colors   = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFFFB74D))
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(54.dp),
+                shape  = RoundedCornerShape(18.dp),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFFFB74D))
             ) {
                 Text(
                     "⏰   تأجيل $snoozeMinutes دقائق",

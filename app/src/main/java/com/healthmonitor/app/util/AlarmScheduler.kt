@@ -4,7 +4,6 @@ import android.app.AlarmManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
-import android.os.Build
 import android.util.Log
 import com.healthmonitor.app.MainActivity
 import java.util.Calendar
@@ -51,38 +50,41 @@ object AlarmScheduler {
         }
 
         val triggerMillis = nextOccurrenceMillis(hour, minute)
-        val pending = buildPendingIntent(context, name, medId, time, dosage)
-        val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        val pending       = buildPendingIntent(context, name, medId, time, dosage)
+        val alarmManager  = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
 
+        // ── Intent shown when user taps the clock icon in the status bar ──────
+        val showIntent = PendingIntent.getActivity(
+            context,
+            alarmRequestCode(medId, time) + 1,
+            Intent(context, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+            },
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        // ── setAlarmClock is the HIGHEST priority alarm type ──────────────────
+        // It shows a clock icon in the status bar, is exempt from Doze mode,
+        // and is respected even by aggressive OEMs (Xiaomi, OPPO, Huawei).
+        // Unlike setExactAndAllowWhileIdle it does NOT require USE_EXACT_ALARM
+        // or SCHEDULE_EXACT_ALARM on any API level — it is always allowed.
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !alarmManager.canScheduleExactAlarms()) {
-                // Fallback: setAlarmClock is user-visible (clock icon in status bar) and
-                // is granted even without USE_EXACT_ALARM on most devices.
-                val showIntent = PendingIntent.getActivity(
-                    context,
-                    alarmRequestCode(medId, time) + 1,
-                    Intent(context, MainActivity::class.java).apply {
-                        flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
-                    },
-                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-                )
-                alarmManager.setAlarmClock(
-                    AlarmManager.AlarmClockInfo(triggerMillis, showIntent),
-                    pending
-                )
-                Log.i(TAG, "setAlarmClock (no-exact-perm fallback) for $name at $time")
-            } else {
-                // Best-effort exact alarm that fires even in Doze mode
-                alarmManager.setExactAndAllowWhileIdle(
-                    AlarmManager.RTC_WAKEUP,
-                    triggerMillis,
-                    pending
-                )
-                Log.i(TAG, "setAlarmClock for $name at $time → trigger=$triggerMillis")
-            }
+            alarmManager.setAlarmClock(
+                AlarmManager.AlarmClockInfo(triggerMillis, showIntent),
+                pending
+            )
+            Log.i(TAG, "setAlarmClock scheduled for $name at $time → trigger=$triggerMillis")
         } catch (e: SecurityException) {
-            Log.w(TAG, "SecurityException — falling back to inexact: ${e.message}")
-            alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerMillis, pending)
+            // Extremely unlikely with setAlarmClock but handle defensively
+            Log.w(TAG, "setAlarmClock SecurityException — falling back to setExact: ${e.message}")
+            try {
+                alarmManager.setExactAndAllowWhileIdle(
+                    AlarmManager.RTC_WAKEUP, triggerMillis, pending
+                )
+            } catch (e2: Exception) {
+                Log.e(TAG, "setExact also failed — using inexact: ${e2.message}")
+                alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerMillis, pending)
+            }
         } catch (e: Exception) {
             Log.e(TAG, "schedule failed for $name: ${e.message}")
         }
@@ -134,14 +136,14 @@ object AlarmScheduler {
         snoozeMinutes: Int
     ) {
         val triggerMillis = System.currentTimeMillis() + snoozeMinutes * 60_000L
-        val uniqueCode = ("snz_$medicationId$scheduledTime").hashCode() and Int.MAX_VALUE
+        val uniqueCode    = ("snz_$medicationId$scheduledTime").hashCode() and Int.MAX_VALUE
 
         val intent = Intent(context, MedicationAlarmReceiver::class.java).apply {
-            putExtra(MedicationAlarmReceiver.EXTRA_MEDICATION_ID, medicationId)
+            putExtra(MedicationAlarmReceiver.EXTRA_MEDICATION_ID,   medicationId)
             putExtra(MedicationAlarmReceiver.EXTRA_MEDICATION_NAME, medicationName)
-            putExtra(MedicationAlarmReceiver.EXTRA_DOSAGE, dosage)
-            putExtra(MedicationAlarmReceiver.EXTRA_SCHEDULED_TIME, scheduledTime)
-            putExtra(MedicationAlarmReceiver.EXTRA_IS_SNOOZE, true)
+            putExtra(MedicationAlarmReceiver.EXTRA_DOSAGE,          dosage)
+            putExtra(MedicationAlarmReceiver.EXTRA_SCHEDULED_TIME,  scheduledTime)
+            putExtra(MedicationAlarmReceiver.EXTRA_IS_SNOOZE,       true)
         }
 
         val pi = PendingIntent.getBroadcast(
@@ -151,18 +153,26 @@ object AlarmScheduler {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
+        val showIntent = PendingIntent.getActivity(
+            context,
+            uniqueCode + 1,
+            Intent(context, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+            },
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
 
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !alarmManager.canScheduleExactAlarms()) {
-                alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerMillis, pi)
-            } else {
-                alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerMillis, pi)
-            }
+            // Use setAlarmClock for snooze too — highest priority, OEM-resistant
+            alarmManager.setAlarmClock(
+                AlarmManager.AlarmClockInfo(triggerMillis, showIntent),
+                pi
+            )
             Log.i(TAG, "snooze alarm set for $medicationName in $snoozeMinutes min")
-        } catch (e: SecurityException) {
+        } catch (e: Exception) {
+            Log.w(TAG, "snooze setAlarmClock failed — inexact fallback: ${e.message}")
             alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerMillis, pi)
-            Log.w(TAG, "snooze SecurityException — inexact fallback: ${e.message}")
         }
     }
 

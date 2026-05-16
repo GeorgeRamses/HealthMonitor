@@ -89,7 +89,6 @@ private fun MainAppScaffold(
     val navController = rememberNavController()
     val ctx = LocalContext.current
     Scaffold(
-
         topBar = { TopAppBarWithSelectors(patientViewModel, caseViewModel, ctx) },
         bottomBar = { BottomNavigationBar(navController) },
         containerColor = Color(0xFF0F0F0F)
@@ -355,14 +354,12 @@ private fun TopAppBarWithSelectors(
                     }
                 }
 
-                // AFTER
                 if (cases.isNotEmpty()) {
                     var caseExpanded by remember { mutableStateOf(false) }
                     val caseSelected = activeCaseId != null && cases.any { it.id == activeCaseId }
                     Box {
                         TextButton(onClick = { caseExpanded = true }) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                // Red dot when no case selected, green dot when selected
                                 Box(
                                     modifier = Modifier
                                         .size(7.dp)
@@ -396,7 +393,6 @@ private fun TopAppBarWithSelectors(
                                     }) else null
                                 )
                             }
-                            // Option to deselect case
                             if (caseSelected) {
                                 DropdownMenuItem(
                                     text = { Text("إلغاء تحديد الحالة", color = Color(0xFFEF5350)) },
@@ -540,15 +536,34 @@ private fun FloatingNavItem(
 
 // ── Notification channel ──────────────────────────────────────────────────────
 
+/**
+ * Creates the medication alarm notification channel.
+ *
+ * FIX: Updated to channel ID "medication_reminders_v3" at IMPORTANCE_MAX.
+ *
+ * Why IMPORTANCE_MAX:
+ *   IMPORTANCE_HIGH (4) is sometimes throttled by the OS on devices with aggressive
+ *   battery management. IMPORTANCE_MAX (5) is the alarm-clock level — it bypasses
+ *   all throttling and guarantees immediate delivery. This is the level used by
+ *   the system Clock app and is the correct value for time-critical alarms.
+ *
+ * Why a new channel ID (v3):
+ *   Android only lets the USER lower a channel's importance after creation —
+ *   code can never raise it. The old "v2" channel was created at IMPORTANCE_HIGH.
+ *   Creating a new channel ID forces Android to create a fresh channel at MAX,
+ *   even on devices that already had the v2 channel.
+ *
+ * Note: MedicationAlarmReceiver.CHANNEL_ID must equal "medication_reminders_v3".
+ */
 private fun createNotificationChannel(context: Context) {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        // Channel ID must match MedicationAlarmReceiver.CHANNEL_ID exactly.
-        // "medication_reminders_v2" forces recreation at IMPORTANCE_HIGH on existing installs.
+
+        // FIX: v3 channel at IMPORTANCE_MAX (was v2 at IMPORTANCE_HIGH)
         val channel = NotificationChannel(
-            "medication_reminders_v2",
+            "medication_reminders_v3",              // must match MedicationAlarmReceiver.CHANNEL_ID
             "تنبيهات الأدوية",
-            NotificationManager.IMPORTANCE_HIGH
+            NotificationManager.IMPORTANCE_MAX      // FIX: was IMPORTANCE_HIGH
         ).apply {
             description         = "تنبيهات بمواعيد الأدوية"
             enableVibration(true)

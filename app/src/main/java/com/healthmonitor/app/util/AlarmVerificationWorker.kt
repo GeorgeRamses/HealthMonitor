@@ -74,7 +74,7 @@ class AlarmVerificationWorker @AssistedInject constructor(
          */
         fun enqueue(context: Context) {
             val request = PeriodicWorkRequestBuilder<AlarmVerificationWorker>(
-                repeatInterval    = 6,
+                repeatInterval    = 1,
                 repeatIntervalTimeUnit = TimeUnit.HOURS
             )
                 .setConstraints(
