@@ -98,7 +98,7 @@ class CaseViewModel @Inject constructor(
                 val meds = repository.getMedicationsByPatientOnce(case.patientId)
                 meds.filter { it.caseId == caseId && it.isActive }.forEach { med ->
                     parseMedicationTimes(med.scheduledTimes).forEach { time ->
-                        AlarmScheduler.schedule(ctx, med.name, med.id, time)
+                        AlarmScheduler.schedule(ctx, med.name, med.id, time, dosageLabel(med.dosage, med.unit))
                     }
                 }
             } catch (e: Exception) {
@@ -106,4 +106,7 @@ class CaseViewModel @Inject constructor(
             }
         }
     }
+
+    private fun dosageLabel(dosage: String, unit: String): String =
+        listOf(dosage.trim(), unit.trim()).filter { it.isNotBlank() }.joinToString(" ")
 }

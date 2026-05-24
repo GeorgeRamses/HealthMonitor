@@ -27,6 +27,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.navigation.NavHostController
 import com.healthmonitor.app.data.local.entities.MedicationEntity
 import com.healthmonitor.app.data.local.entities.MedicationLogEntity
@@ -40,7 +43,6 @@ import com.healthmonitor.app.util.MedicationInventoryStatus
 import com.healthmonitor.app.util.calculateMedicationInventoryStatus
 import com.healthmonitor.app.util.format12Hour
 import com.healthmonitor.app.data.model.DosageFormType
-import com.healthmonitor.app.data.model.DosageForm
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -109,9 +111,9 @@ fun MedicationsScreen(
             MedItem(medication = med, times = times, logs = logs)
         }.sortedWith(
             compareBy(
-            { it.times.minOfOrNull { t -> normalizeTime(t) } ?: "99:99" },
-            { it.medication.name }
-        ))
+                { it.times.minOfOrNull { t -> normalizeTime(t) } ?: "99:99" },
+                { it.medication.name }
+            ))
 
     val allItems = buildMedItems(activeMedications)
     val takenItems = allItems.filter { it.allTaken }
@@ -141,16 +143,28 @@ fun MedicationsScreen(
     var needsOemPermission by remember {
         mutableStateOf(AlarmPermissionHelper.needsOemPermission(context))
     }
+
+    // Reset stale "ignored" flag from old app versions so returning OEM users
+    // see the warning card again after an update.
+    LaunchedEffect(Unit) {
+        AlarmPermissionHelper.resetIgnoredFlag(context)
+        needsOemPermission = AlarmPermissionHelper.needsOemPermission(context)
+    }
+
     val cameraPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted -> hasCameraPermission = granted; if (granted) showScanner = true }
 
     // Update warning card visibility when dialog is dismissed
-    LaunchedEffect(viewModel.showOemDialog) {
-        if (!viewModel.showOemDialog) {
-            // Check again if permission needs to be shown
-            needsOemPermission = AlarmPermissionHelper.needsOemPermission(context)
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                needsOemPermission = AlarmPermissionHelper.needsOemPermission(context)
+            }
         }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     LaunchedEffect(medicineInfoTarget) {
@@ -184,9 +198,13 @@ fun MedicationsScreen(
         ) {
             Spacer(Modifier.height(HMSpacing.lg))
             if (needsOemPermission) {
-                PermissionWarningCard(onAction = {
-                    viewModel.showOemDialog = true
-                })
+                PermissionWarningCard(
+                    onAction = { viewModel.showOemDialog = true },
+                    onGranted = {
+                        AlarmPermissionHelper.markOemPermissionGranted(context)
+                        needsOemPermission = false
+                    }  // hide immediately
+                )
             }
             Text("الأدوية", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = HMColor.TextPrimary)
             Spacer(Modifier.height(HMSpacing.lg))
@@ -244,6 +262,7 @@ fun MedicationsScreen(
                         },
                         onEdit = { editTarget = item.medication },
                         onDelete = { deleteTarget = item.medication },
+                        onReactivate = { viewModel.toggleMedicationActive(item.medication) },
                         onShowInfo = { medicineInfoTarget = item.medication.name },
                         onRefill = { refillTarget = item.medication }
                             .takeIf { item.medication.inventoryMode == MedicationInventoryMode.STOCK }
@@ -272,6 +291,7 @@ fun MedicationsScreen(
                         },
                         onEdit = { editTarget = item.medication },
                         onDelete = { deleteTarget = item.medication },
+                        onReactivate = { viewModel.toggleMedicationActive(item.medication) },
                         onShowInfo = { medicineInfoTarget = item.medication.name },
                         onRefill = { refillTarget = item.medication }
                             .takeIf { item.medication.inventoryMode == MedicationInventoryMode.STOCK }
@@ -308,6 +328,7 @@ fun MedicationsScreen(
                         onToggleDose = { _, _, _ -> },
                         onEdit = { editTarget = med },
                         onDelete = { deleteTarget = med },
+                        onReactivate = { viewModel.toggleMedicationActive(med) },
                         onShowInfo = { medicineInfoTarget = med.name },
                         onRefill = {},
                         dimmed = true
@@ -325,7 +346,11 @@ fun MedicationsScreen(
         showA14Dialog = viewModel.showA14Dialog,
         showOemDialog = viewModel.showOemDialog,
         onDismissA14 = { viewModel.showA14Dialog = false },
-        onDismissOem = { viewModel.showOemDialog = false }
+        onDismissOem = { viewModel.showOemDialog = false },
+        onOemGranted = {                                    // ← new
+            viewModel.showOemDialog = false
+            needsOemPermission = false
+        }
     )
 
     // ── Medicine info bottom sheet ─────────────────────────────────────────────
@@ -361,10 +386,11 @@ fun MedicationsScreen(
                 else cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
             },
             onDismiss = { showAddDialog = false; scannedName = "" },
-            onSave = { name, dosage, unit, freq, times, notes, days, mode, totalQty, currentQty, qtyPerDose ->
+            onSave = { name, dosage, dosageFormKey, unit, freq, times, notes, days, mode, totalQty, currentQty, qtyPerDose ->
                 viewModel.addMedicationWithPermissionCheck(
                     name,
                     dosage,
+                    dosageFormKey,
                     unit,
                     freq,
                     times,
@@ -427,11 +453,12 @@ fun MedicationsScreen(
                 else cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
             },
             onDismiss = { editTarget = null; scannedName = "" },
-            onSave = { name, dosage, unit, freq, times, notes, days, mode, totalQty, currentQty, qtyPerDose ->
+            onSave = { name, dosage, dosageFormKey, unit, freq, times, notes, days, mode, totalQty, currentQty, qtyPerDose ->
                 viewModel.updateMedication(
                     med,
                     name,
                     dosage,
+                    dosageFormKey,
                     unit,
                     freq,
                     times,
@@ -590,6 +617,7 @@ private fun MedCard(
     onToggleDose: (String, String, Boolean) -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
+    onReactivate: () -> Unit,
     onShowInfo: () -> Unit,
     onRefill: () -> Unit,
     dimmed: Boolean = false
@@ -667,13 +695,32 @@ private fun MedCard(
                         tint = HMColor.BlueBright.copy(alpha = alpha), modifier = Modifier.size(16.dp)
                     )
                 }
-                IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
-                    Icon(
-                        Icons.Outlined.Delete, "حذف",
-                        tint = HMColor.RedBright.copy(alpha = alpha), modifier = Modifier.size(16.dp)
-                    )
+                if (dimmed) {
+                    IconButton(onClick = onReactivate, modifier = Modifier.size(32.dp)) {
+                        Icon(
+                            Icons.Default.PlayCircle, "إعادة تفعيل",
+                            tint = HMColor.GreenBright, modifier = Modifier.size(18.dp)
+                        )
+                    }
+                } else {
+                    IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
+                        Icon(
+                            Icons.Outlined.Delete, "حذف",
+                            tint = HMColor.RedBright.copy(alpha = alpha), modifier = Modifier.size(16.dp)
+                        )
+                    }
                 }
             }
+        }
+
+        if (dimmed) {
+            Spacer(Modifier.height(HMSpacing.sm))
+            HMPrimaryButton(
+                text = "إعادة استخدام الدواء",
+                onClick = onReactivate,
+                leadingIcon = Icons.Default.PlayCircle,
+                modifier = Modifier.fillMaxWidth()
+            )
         }
 
         // ── Scheduled dose times — one row per time with individual checkbox ───
@@ -1091,30 +1138,33 @@ internal fun MedEditorDialog(
     initialName: String = "",
     onScanRequest: () -> Unit = {},
     onDismiss: () -> Unit,
-    onSave: (String, String, String, String, List<String>, String?, Int, String, Double?, Double?, Double) -> Unit
+    onSave: (String, String, String, String, String, List<String>, String?, Int, String, Double?, Double?, Double) -> Unit
 ) {
     // ── State ─────────────────────────────────────────────────────────────────
-    var name          by remember { mutableStateOf(initialName.ifBlank { initial?.name ?: "" }) }
-    var dosage        by remember { mutableStateOf(initial?.dosage ?: "") }
+    var name by remember { mutableStateOf(initialName.ifBlank { initial?.name ?: "" }) }
+    var dosage by remember { mutableStateOf(initial?.dosage ?: "") }
     // شكل الدواء — بنخمنه من الـ unit المحفوظة لو دواء موجود
-    var selectedForm  by remember {
-        mutableStateOf(DosageFormType.guessFromUnit(initial?.unit ?: "mg"))
+    var selectedForm by remember {
+        mutableStateOf(
+            DosageFormType.fromKey(initial?.dosageFormKey)
+                ?: DosageFormType.guessFromUnit(initial?.unit ?: "mg")
+        )
     }
-    var unit          by remember {
+    var unit by remember {
         mutableStateOf(initial?.unit ?: DosageFormType.TABLET.defaultUnit)
     }
-    var frequency     by remember { mutableStateOf(initial?.frequency ?: FrequencyType.ONCE_DAILY) }
-    var notes         by remember { mutableStateOf(initial?.notes ?: "") }
-    var durationDays  by remember { mutableStateOf((initial?.durationDays ?: 7).toString()) }
+    var frequency by remember { mutableStateOf(initial?.frequency ?: FrequencyType.ONCE_DAILY) }
+    var notes by remember { mutableStateOf(initial?.notes ?: "") }
+    var durationDays by remember { mutableStateOf((initial?.durationDays ?: 7).toString()) }
     var inventoryMode by remember { mutableStateOf(initial?.inventoryMode ?: MedicationInventoryMode.COURSE) }
-    var totalQuantity   by remember { mutableStateOf(initial?.totalQuantity?.formatQuantityLocal() ?: "") }
+    var totalQuantity by remember { mutableStateOf(initial?.totalQuantity?.formatQuantityLocal() ?: "") }
     var currentQuantity by remember { mutableStateOf(initial?.currentQuantity?.formatQuantityLocal() ?: totalQuantity) }
     var quantityPerDose by remember { mutableStateOf(initial?.quantityPerDose?.formatQuantityLocal() ?: "1") }
-    var times         by remember { mutableStateOf(initTimes.toMutableList()) }
-    var showPicker    by remember { mutableStateOf(false) }
+    var times by remember { mutableStateOf(initTimes.toMutableList()) }
+    var showPicker by remember { mutableStateOf(false) }
     var showSuggestion by remember { mutableStateOf(false) }
     var suggestedTimes by remember { mutableStateOf<List<String>>(emptyList()) }
-    val timeState     = rememberTimePickerState(8, 0, false)
+    val timeState = rememberTimePickerState(8, 0, false)
 
     // ── Validation ────────────────────────────────────────────────────────────
     val stockValid = inventoryMode != MedicationInventoryMode.STOCK ||
@@ -1132,26 +1182,26 @@ internal fun MedEditorDialog(
     if (showPicker) {
         AlertDialog(
             onDismissRequest = { showPicker = false },
-            containerColor   = HMColor.BgElevated,
-            title            = { Text("اختر الوقت", color = HMColor.TextPrimary) },
+            containerColor = HMColor.BgElevated,
+            title = { Text("اختر الوقت", color = HMColor.TextPrimary) },
             text = {
                 TimePicker(
-                    state  = timeState,
+                    state = timeState,
                     colors = TimePickerDefaults.colors(
-                        clockDialColor                         = HMColor.BgOverlay,
-                        clockDialSelectedContentColor          = HMColor.TextInverse,
-                        clockDialUnselectedContentColor        = HMColor.TextSecondary,
-                        selectorColor                          = HMColor.GreenBright,
-                        containerColor                         = HMColor.BgElevated,
-                        periodSelectorBorderColor              = HMColor.GreenBright,
-                        periodSelectorSelectedContainerColor   = HMColor.GreenBright,
+                        clockDialColor = HMColor.BgOverlay,
+                        clockDialSelectedContentColor = HMColor.TextInverse,
+                        clockDialUnselectedContentColor = HMColor.TextSecondary,
+                        selectorColor = HMColor.GreenBright,
+                        containerColor = HMColor.BgElevated,
+                        periodSelectorBorderColor = HMColor.GreenBright,
+                        periodSelectorSelectedContainerColor = HMColor.GreenBright,
                         periodSelectorUnselectedContainerColor = HMColor.BgOverlay,
-                        periodSelectorSelectedContentColor     = HMColor.TextInverse,
-                        periodSelectorUnselectedContentColor   = HMColor.TextSecondary,
-                        timeSelectorSelectedContainerColor     = HMColor.GreenBright.copy(alpha = 0.2f),
-                        timeSelectorUnselectedContainerColor   = HMColor.BgOverlay,
-                        timeSelectorSelectedContentColor       = HMColor.GreenBright,
-                        timeSelectorUnselectedContentColor     = HMColor.TextPrimary
+                        periodSelectorSelectedContentColor = HMColor.TextInverse,
+                        periodSelectorUnselectedContentColor = HMColor.TextSecondary,
+                        timeSelectorSelectedContainerColor = HMColor.GreenBright.copy(alpha = 0.2f),
+                        timeSelectorUnselectedContainerColor = HMColor.BgOverlay,
+                        timeSelectorSelectedContentColor = HMColor.GreenBright,
+                        timeSelectorUnselectedContentColor = HMColor.TextPrimary
                     )
                 )
             },
@@ -1183,9 +1233,9 @@ internal fun MedEditorDialog(
                     ) {
                         Text(
                             "تأكيد",
-                            fontSize   = 13.sp,
+                            fontSize = 13.sp,
                             fontWeight = FontWeight.SemiBold,
-                            color      = HMColor.TextInverse
+                            color = HMColor.TextInverse
                         )
                     }
                 }
@@ -1230,7 +1280,11 @@ internal fun MedEditorDialog(
                                     .fillMaxWidth()
                                     .clip(RoundedCornerShape(HMRadius.xs))
                                     .background(HMColor.GreenBright.copy(alpha = 0.08f))
-                                    .border(1.dp, HMColor.GreenBright.copy(alpha = 0.3f), RoundedCornerShape(HMRadius.xs))
+                                    .border(
+                                        1.dp,
+                                        HMColor.GreenBright.copy(alpha = 0.3f),
+                                        RoundedCornerShape(HMRadius.xs)
+                                    )
                                     .padding(HMSpacing.sm),
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(HMSpacing.sm)
@@ -1293,11 +1347,11 @@ internal fun MedEditorDialog(
 
     // ── Main dialog ───────────────────────────────────────────────────────────
     AlertDialog(
-        onDismissRequest  = onDismiss,
-        containerColor    = HMColor.BgElevated,
+        onDismissRequest = onDismiss,
+        containerColor = HMColor.BgElevated,
         titleContentColor = HMColor.TextPrimary,
-        title             = { Text(title, fontWeight = FontWeight.SemiBold) },
-        shape             = RoundedCornerShape(HMRadius.lg),
+        title = { Text(title, fontWeight = FontWeight.SemiBold) },
+        shape = RoundedCornerShape(HMRadius.lg),
         text = {
             Column(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
@@ -1305,16 +1359,16 @@ internal fun MedEditorDialog(
             ) {
                 // ── اسم الدواء + كاميرا ────────────────────────────────────────
                 Row(
-                    verticalAlignment     = Alignment.CenterVertically,
+                    verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(HMSpacing.sm)
                 ) {
                     HMTextField(
-                        value         = name,
+                        value = name,
                         onValueChange = { name = it },
-                        label         = "اسم الدواء *",
-                        placeholder   = "مثال: Norvasc",
-                        leadingIcon   = Icons.Outlined.LocalPharmacy,
-                        modifier      = Modifier.weight(1f)
+                        label = "اسم الدواء *",
+                        placeholder = "مثال: Norvasc",
+                        leadingIcon = Icons.Outlined.LocalPharmacy,
+                        modifier = Modifier.weight(1f)
                     )
                     HMPressable(onClick = onScanRequest, modifier = Modifier.padding(top = 6.dp)) {
                         Box(
@@ -1328,7 +1382,7 @@ internal fun MedEditorDialog(
                             Icon(
                                 Icons.Default.CameraAlt,
                                 null,
-                                tint     = HMColor.GreenBright,
+                                tint = HMColor.GreenBright,
                                 modifier = Modifier.size(22.dp)
                             )
                         }
@@ -1337,15 +1391,15 @@ internal fun MedEditorDialog(
 
                 // ── شكل الدواء + الوحدة + الكمية (الجديد) ─────────────────────
                 DosageInputSection(
-                    dosage         = dosage,
+                    dosage = dosage,
                     onDosageChange = { dosage = it.filterDecimalLocal() },
-                    selectedForm   = selectedForm,
-                    onFormChange   = { form ->
+                    selectedForm = selectedForm,
+                    onFormChange = { form ->
                         selectedForm = form
                         unit = form.defaultUnit
                     },
-                    selectedUnit   = unit,
-                    onUnitChange   = { unit = it }
+                    selectedUnit = unit,
+                    onUnitChange = { unit = it }
                 )
 
                 // ── نوع المتابعة ────────────────────────────────────────────────
@@ -1355,12 +1409,12 @@ internal fun MedEditorDialog(
                 // ── حقول خاصة بكل mode ─────────────────────────────────────────
                 AnimatedVisibility(visible = inventoryMode == MedicationInventoryMode.COURSE) {
                     HMTextField(
-                        value         = durationDays,
+                        value = durationDays,
                         onValueChange = { durationDays = it.filter(Char::isDigit) },
-                        label         = "مدة العلاج (أيام) *",
-                        placeholder   = "7",
-                        keyboardType  = KeyboardType.Number,
-                        leadingIcon   = Icons.Outlined.DateRange
+                        label = "مدة العلاج (أيام) *",
+                        placeholder = "7",
+                        keyboardType = KeyboardType.Number,
+                        leadingIcon = Icons.Outlined.DateRange
                     )
                 }
 
@@ -1368,54 +1422,54 @@ internal fun MedEditorDialog(
                     Column(verticalArrangement = Arrangement.spacedBy(HMSpacing.sm)) {
                         Row(horizontalArrangement = Arrangement.spacedBy(HMSpacing.sm)) {
                             HMTextField(
-                                value         = currentQuantity,
+                                value = currentQuantity,
                                 onValueChange = { currentQuantity = it.filterDecimalLocal() },
-                                label         = "المخزون الحالي",
-                                placeholder   = "30",
-                                keyboardType  = KeyboardType.Decimal,
-                                modifier      = Modifier.weight(1f)
+                                label = "المخزون الحالي",
+                                placeholder = "30",
+                                keyboardType = KeyboardType.Decimal,
+                                modifier = Modifier.weight(1f)
                             )
                             HMTextField(
-                                value         = quantityPerDose,
+                                value = quantityPerDose,
                                 onValueChange = { quantityPerDose = it.filterDecimalLocal() },
-                                label         = "لكل جرعة",
-                                placeholder   = "1",
-                                keyboardType  = KeyboardType.Decimal,
-                                modifier      = Modifier.weight(1f)
+                                label = "لكل جرعة",
+                                placeholder = "1",
+                                keyboardType = KeyboardType.Decimal,
+                                modifier = Modifier.weight(1f)
                             )
                         }
                         HMTextField(
-                            value         = totalQuantity,
+                            value = totalQuantity,
                             onValueChange = { totalQuantity = it.filterDecimalLocal() },
-                            label         = "إجمالي العبوة (اختياري)",
-                            placeholder   = "30",
-                            keyboardType  = KeyboardType.Decimal
+                            label = "إجمالي العبوة (اختياري)",
+                            placeholder = "30",
+                            keyboardType = KeyboardType.Decimal
                         )
                     }
                 }
 
                 AnimatedVisibility(visible = inventoryMode == MedicationInventoryMode.CHRONIC) {
                     HMCard(
-                        modifier        = Modifier.fillMaxWidth(),
-                        borderColor     = HMColor.CyanBright.copy(alpha = 0.3f),
+                        modifier = Modifier.fillMaxWidth(),
+                        borderColor = HMColor.CyanBright.copy(alpha = 0.3f),
                         backgroundColor = HMColor.BgOverlay
                     ) {
                         Row(
-                            verticalAlignment     = Alignment.CenterVertically,
+                            verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(HMSpacing.sm)
                         ) {
                             Text("♾️", fontSize = 18.sp)
                             Column {
                                 Text(
                                     "علاج مستمر",
-                                    fontSize   = 13.sp,
+                                    fontSize = 13.sp,
                                     fontWeight = FontWeight.SemiBold,
-                                    color      = HMColor.CyanBright
+                                    color = HMColor.CyanBright
                                 )
                                 Text(
                                     "لا نهاية محددة — يستمر حتى يوقفه الطبيب أو المريض",
-                                    fontSize   = 11.sp,
-                                    color      = HMColor.TextSecondary,
+                                    fontSize = 11.sp,
+                                    color = HMColor.TextSecondary,
                                     lineHeight = 16.sp
                                 )
                             }
@@ -1434,11 +1488,11 @@ internal fun MedEditorDialog(
                 } else {
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        modifier              = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth()
                     ) {
                         times.forEach { t ->
                             TimeChip(
-                                time     = t,
+                                time = t,
                                 onRemove = {
                                     times = times.toMutableList().also { m -> m.remove(t) }
                                 }
@@ -1447,20 +1501,20 @@ internal fun MedEditorDialog(
                     }
                 }
                 HMSecondaryButton(
-                    text        = "إضافة وقت",
-                    onClick     = { showPicker = true },
+                    text = "إضافة وقت",
+                    onClick = { showPicker = true },
                     leadingIcon = Icons.Outlined.Schedule,
-                    modifier    = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth()
                 )
 
                 // ── ملاحظات ────────────────────────────────────────────────────
                 HMTextField(
-                    value         = notes,
+                    value = notes,
                     onValueChange = { notes = it },
-                    label         = "ملاحظات (اختياري)",
-                    singleLine    = false,
-                    minLines      = 2,
-                    maxLines      = 4
+                    label = "ملاحظات (اختياري)",
+                    singleLine = false,
+                    minLines = 2,
+                    maxLines = 4
                 )
             }
         },
@@ -1470,6 +1524,7 @@ internal fun MedEditorDialog(
                     if (isValid) onSave(
                         name.trim(),
                         dosage.trim(),
+                        selectedForm.key,
                         unit.trim(),
                         frequency,
                         times.toList(),
@@ -1493,8 +1548,8 @@ internal fun MedEditorDialog(
                     Text(
                         "حفظ",
                         fontWeight = FontWeight.SemiBold,
-                        fontSize   = 13.sp,
-                        color      = if (isValid) HMColor.TextInverse else HMColor.TextDisabled
+                        fontSize = 13.sp,
+                        color = if (isValid) HMColor.TextInverse else HMColor.TextDisabled
                     )
                 }
             }
@@ -1649,13 +1704,13 @@ private fun Double.formatQuantityLocal(): String = if (this % 1.0 == 0.0) toInt(
  * Get the number of times per day for a frequency type.
  */
 private fun getFrequencyCount(frequency: String): Int = when (frequency) {
-    FrequencyType.ONCE_DAILY        -> 1
-    FrequencyType.TWICE_DAILY       -> 2
+    FrequencyType.ONCE_DAILY -> 1
+    FrequencyType.TWICE_DAILY -> 2
     FrequencyType.THREE_TIMES_DAILY -> 3
-    FrequencyType.FOUR_TIMES_DAILY  -> 4
-    FrequencyType.EVERY_8_HOURS     -> 3  // 24 / 8 = 3
-    FrequencyType.EVERY_12_HOURS    -> 2  // 24 / 12 = 2
-    else                            -> 1  // AS_NEEDED, WEEKLY, BIWEEKLY, etc.
+    FrequencyType.FOUR_TIMES_DAILY -> 4
+    FrequencyType.EVERY_8_HOURS -> 3  // 24 / 8 = 3
+    FrequencyType.EVERY_12_HOURS -> 2  // 24 / 12 = 2
+    else -> 1  // AS_NEEDED, WEEKLY, BIWEEKLY, etc.
 }
 
 /**

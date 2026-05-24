@@ -33,7 +33,7 @@ class BootReceiver : BroadcastReceiver() {
                 var scheduled = 0
                 meds.forEach { med ->
                     parseMedicationTimes(med.scheduledTimes).forEach { time ->
-                        AlarmScheduler.schedule(appContext, med.name, med.id, time)
+                        AlarmScheduler.schedule(appContext, med.name, med.id, time, dosageLabel(med.dosage, med.unit))
                         scheduled++
                     }
                 }
@@ -48,3 +48,6 @@ class BootReceiver : BroadcastReceiver() {
         private const val TAG = "BootReceiver"
     }
 }
+
+private fun dosageLabel(dosage: String, unit: String): String =
+    listOf(dosage.trim(), unit.trim()).filter { it.isNotBlank() }.joinToString(" ")

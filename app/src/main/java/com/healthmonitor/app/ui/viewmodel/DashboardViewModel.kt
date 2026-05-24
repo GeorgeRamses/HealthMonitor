@@ -83,7 +83,7 @@ class DashboardViewModel @Inject constructor(
 
     // ── Case date window (drives BP/symptom/temperature filtering) ────────
     private val _caseFromDate = MutableStateFlow<Long?>(null)
-    private val _caseToDate   = MutableStateFlow<Long?>(null)
+    private val _caseToDate = MutableStateFlow<Long?>(null)
 
     // ── Symptoms ─────────────────────────────────────────────────────────
 
@@ -165,7 +165,7 @@ class DashboardViewModel @Inject constructor(
                     }
                 } else {
                     _caseFromDate.value = null
-                    _caseToDate.value   = null
+                    _caseToDate.value = null
                 }
 
                 collectMedications(patientId)
@@ -198,10 +198,10 @@ class DashboardViewModel @Inject constructor(
         val caseId = _currentCaseId.value
 
         if (caseId == null) {
-            _allMedications.value    = emptyList()
-            _todayMedications.value  = emptyList()
-            _scheduleMap.value       = emptyMap()
-            _medicationLogs.value    = emptyList()
+            _allMedications.value = emptyList()
+            _todayMedications.value = emptyList()
+            _scheduleMap.value = emptyMap()
+            _medicationLogs.value = emptyList()
             calculateAdherence()
             return
         }
@@ -263,16 +263,16 @@ class DashboardViewModel @Inject constructor(
     private fun collectBloodPressureInCaseRange(patientId: String) {
         bloodPressureCollectionJob?.cancel()
         val from = _caseFromDate.value
-        val to   = _caseToDate.value
+        val to = _caseToDate.value
         bloodPressureCollectionJob = viewModelScope.launch {
             if (from != null && to != null) {
                 repository.getBloodPressureReadingsInRange(patientId, from, to).collect { readings ->
                     _bloodPressureReadings.value = readings
-                    _lastBloodPressure.value     = readings.firstOrNull()
+                    _lastBloodPressure.value = readings.firstOrNull()
                 }
             } else {
                 _bloodPressureReadings.value = emptyList()
-                _lastBloodPressure.value     = null
+                _lastBloodPressure.value = null
             }
         }
     }
@@ -280,21 +280,21 @@ class DashboardViewModel @Inject constructor(
     private fun collectSymptomsInCaseRange(patientId: String) {
         symptomCollectionJob?.cancel()
         val from = _caseFromDate.value
-        val to   = _caseToDate.value
+        val to = _caseToDate.value
         symptomCollectionJob = viewModelScope.launch {
             if (from != null && to != null) {
                 repository.getSymptomsByPatientInRange(patientId, from, to).collect { symptoms ->
-                    _allSymptoms.value    = symptoms
+                    _allSymptoms.value = symptoms
                     _recentSymptoms.value = symptoms.take(10)
-                    _todaySymptoms.value  = symptoms.filter { it.date == getTodayMillis() }
-                    _symptomTypes.value   = (defaultSymptomTypes() + symptoms.map { it.symptomType })
+                    _todaySymptoms.value = symptoms.filter { it.date == getTodayMillis() }
+                    _symptomTypes.value = (defaultSymptomTypes() + symptoms.map { it.symptomType })
                         .distinct().sorted()
                 }
             } else {
-                _allSymptoms.value    = emptyList()
+                _allSymptoms.value = emptyList()
                 _recentSymptoms.value = emptyList()
-                _todaySymptoms.value  = emptyList()
-                _symptomTypes.value   = defaultSymptomTypes()
+                _todaySymptoms.value = emptyList()
+                _symptomTypes.value = defaultSymptomTypes()
             }
         }
     }
@@ -302,16 +302,16 @@ class DashboardViewModel @Inject constructor(
     private fun collectBodyTemperatureInCaseRange(patientId: String) {
         bodyTemperatureCollectionJob?.cancel()
         val from = _caseFromDate.value
-        val to   = _caseToDate.value
+        val to = _caseToDate.value
         bodyTemperatureCollectionJob = viewModelScope.launch {
             if (from != null && to != null) {
                 repository.getBodyTemperatureReadingsInRange(patientId, from, to).collect { readings ->
                     _bodyTemperatureReadings.value = readings
-                    _lastBodyTemperature.value     = readings.firstOrNull()
+                    _lastBodyTemperature.value = readings.firstOrNull()
                 }
             } else {
                 _bodyTemperatureReadings.value = emptyList()
-                _lastBodyTemperature.value     = null
+                _lastBodyTemperature.value = null
             }
         }
     }
@@ -325,6 +325,7 @@ class DashboardViewModel @Inject constructor(
     fun addMedication(
         name: String,
         dosage: String,
+        dosageFormKey: String,
         unit: String,
         frequency: String,
         scheduledTimes: List<String>,
@@ -337,25 +338,26 @@ class DashboardViewModel @Inject constructor(
     ) {
         viewModelScope.launch {
             val patientId = _currentPatient.value?.id ?: return@launch
-            val caseId    = _currentCaseId.value ?: return@launch
-            val ctx       = getApplication<Application>().applicationContext
+            val caseId = _currentCaseId.value ?: return@launch
+            val ctx = getApplication<Application>().applicationContext
             val entity = MedicationEntity(
-                patientId       = patientId,
-                caseId          = caseId,
-                name            = name,
-                dosage          = dosage,
-                unit            = unit,
-                frequency       = frequency,
-                timesPerDay     = scheduledTimes.size.coerceAtLeast(1),
-                scheduledTimes  = JSONArray(scheduledTimes).toString(),
-                inventoryMode   = inventoryMode,
-                durationDays    = durationDays,
-                totalQuantity   = totalQuantity,
+                patientId = patientId,
+                caseId = caseId,
+                name = name,
+                dosage = dosage,
+                dosageFormKey = dosageFormKey,
+                unit = unit,
+                frequency = frequency,
+                timesPerDay = scheduledTimes.size.coerceAtLeast(1),
+                scheduledTimes = JSONArray(scheduledTimes).toString(),
+                inventoryMode = inventoryMode,
+                durationDays = durationDays,
+                totalQuantity = totalQuantity,
                 currentQuantity = currentQuantity,
                 quantityPerDose = quantityPerDose,
-                startDate       = getTodayMillis(),
-                notes           = notes?.takeIf { it.isNotBlank() },
-                isActive        = true
+                startDate = getTodayMillis(),
+                notes = notes?.takeIf { it.isNotBlank() },
+                isActive = true
             )
             repository.insertMedication(entity)
             val schedules = scheduledTimes.map { time ->
@@ -365,7 +367,7 @@ class DashboardViewModel @Inject constructor(
             // Only schedule alarms if global alarm setting is on
             if (com.healthmonitor.app.ui.screens.isMedicationAlarmsEnabled(ctx)) {
                 scheduledTimes.forEach { time ->
-                    AlarmScheduler.schedule(ctx, name, entity.id, time)
+                    AlarmScheduler.schedule(ctx, name, entity.id, time, dosageLabel(dosage, unit))
                 }
             }
             refreshMedicationData()
@@ -376,6 +378,7 @@ class DashboardViewModel @Inject constructor(
         medication: MedicationEntity,
         name: String,
         dosage: String,
+        dosageFormKey: String,
         unit: String,
         frequency: String,
         scheduledTimes: List<String>,
@@ -387,22 +390,24 @@ class DashboardViewModel @Inject constructor(
         quantityPerDose: Double = medication.quantityPerDose
     ) {
         viewModelScope.launch {
-            val ctx      = getApplication<Application>().applicationContext
-            val oldTimes = getScheduledTimesFor(medication.id)
-            val updated  = medication.copy(
-                name            = name,
-                dosage          = dosage,
-                unit            = unit,
-                frequency       = frequency,
-                timesPerDay     = scheduledTimes.size.coerceAtLeast(1),
-                scheduledTimes  = JSONArray(scheduledTimes).toString(),
-                inventoryMode   = inventoryMode,
-                durationDays    = durationDays,
-                totalQuantity   = totalQuantity,
+            val ctx = getApplication<Application>().applicationContext
+            val oldTimes = repository.getSchedulesForMedicationOnce(medication.id)
+                .map { it.scheduledTime }
+            val updated = medication.copy(
+                name = name,
+                dosage = dosage,
+                dosageFormKey = dosageFormKey,
+                unit = unit,
+                frequency = frequency,
+                timesPerDay = scheduledTimes.size.coerceAtLeast(1),
+                scheduledTimes = JSONArray(scheduledTimes).toString(),
+                inventoryMode = inventoryMode,
+                durationDays = durationDays,
+                totalQuantity = totalQuantity,
                 currentQuantity = currentQuantity,
                 quantityPerDose = quantityPerDose,
-                notes           = notes?.takeIf { it.isNotBlank() },
-                lastModifiedAt  = System.currentTimeMillis()
+                notes = notes?.takeIf { it.isNotBlank() },
+                lastModifiedAt = System.currentTimeMillis()
             )
             repository.updateMedication(updated)
             repository.softDeleteSchedulesForMedication(medication.id)
@@ -414,7 +419,7 @@ class DashboardViewModel @Inject constructor(
             AlarmScheduler.cancelAll(ctx, medication.name, medication.id, oldTimes)
             if (com.healthmonitor.app.ui.screens.isMedicationAlarmsEnabled(ctx)) {
                 scheduledTimes.forEach { time ->
-                    AlarmScheduler.schedule(ctx, name, medication.id, time)
+                    AlarmScheduler.schedule(ctx, name, medication.id, time, dosageLabel(dosage, unit))
                 }
             }
             refreshMedicationData()
@@ -423,15 +428,21 @@ class DashboardViewModel @Inject constructor(
 
     fun toggleMedicationActive(medication: MedicationEntity) {
         viewModelScope.launch {
-            val ctx     = getApplication<Application>().applicationContext
+            val ctx = getApplication<Application>().applicationContext
+            val activating = !medication.isActive
             val updated = medication.copy(
-                isActive       = !medication.isActive,
+                isActive = activating,
+                startDate = if (activating) getTodayMillis() else medication.startDate,
+                endDate = if (activating) null else medication.endDate,
                 lastModifiedAt = System.currentTimeMillis()
             )
             repository.updateMedication(updated)
             val times = getScheduledTimesFor(medication.id)
+                .ifEmpty { parseMedicationTimes(medication.scheduledTimes) }
             if (updated.isActive && com.healthmonitor.app.ui.screens.isMedicationAlarmsEnabled(ctx)) {
-                times.forEach { AlarmScheduler.schedule(ctx, updated.name, updated.id, it) }
+                times.forEach {
+                    AlarmScheduler.schedule(ctx, updated.name, updated.id, it, dosageLabel(updated.dosage, updated.unit))
+                }
             } else {
                 AlarmScheduler.cancelAll(ctx, medication.name, medication.id, times)
             }
@@ -439,9 +450,12 @@ class DashboardViewModel @Inject constructor(
         }
     }
 
+    private fun dosageLabel(dosage: String, unit: String): String =
+        listOf(dosage.trim(), unit.trim()).filter { it.isNotBlank() }.joinToString(" ")
+
     fun deleteMedication(medication: MedicationEntity) {
         viewModelScope.launch {
-            val ctx   = getApplication<Application>().applicationContext
+            val ctx = getApplication<Application>().applicationContext
             val times = getScheduledTimesFor(medication.id)
             AlarmScheduler.cancelAll(ctx, medication.name, medication.id, times)
             repository.softDeleteSchedulesForMedication(medication.id)
@@ -463,8 +477,8 @@ class DashboardViewModel @Inject constructor(
             repository.updateMedication(
                 medication.copy(
                     currentQuantity = newQuantity,
-                    totalQuantity   = newTotal,
-                    lastModifiedAt  = System.currentTimeMillis()
+                    totalQuantity = newTotal,
+                    lastModifiedAt = System.currentTimeMillis()
                 )
             )
             refreshMedicationData()
@@ -485,15 +499,15 @@ class DashboardViewModel @Inject constructor(
         actualTime: Long = System.currentTimeMillis()
     ) {
         viewModelScope.launch {
-            val patientId   = _currentPatient.value?.id ?: return@launch
+            val patientId = _currentPatient.value?.id ?: return@launch
             val existingLog = repository.getMedicationLogForDose(medicationId, date, scheduledTime)
-            val medication  = repository.getMedicationById(medicationId)
+            val medication = repository.getMedicationById(medicationId)
             when {
                 existingLog != null -> {
                     repository.updateMedicationLog(
                         existingLog.copy(
-                            time           = actualTime,
-                            taken          = taken,
+                            time = actualTime,
+                            taken = taken,
                             lastModifiedAt = System.currentTimeMillis()
                         )
                     )
@@ -501,15 +515,16 @@ class DashboardViewModel @Inject constructor(
                         adjustMedicationStock(medication, decrement = taken)
                     }
                 }
+
                 taken -> {
                     repository.insertMedicationLog(
                         MedicationLogEntity(
-                            medicationId  = medicationId,
-                            patientId     = patientId,
-                            date          = date,
+                            medicationId = medicationId,
+                            patientId = patientId,
+                            date = date,
                             scheduledTime = scheduledTime,
-                            time          = actualTime,
-                            taken         = true
+                            time = actualTime,
+                            taken = true
                         )
                     )
                     adjustMedicationStock(medication, decrement = true)
@@ -521,7 +536,7 @@ class DashboardViewModel @Inject constructor(
     private suspend fun adjustMedicationStock(medication: MedicationEntity?, decrement: Boolean) {
         if (medication == null || medication.inventoryMode != MedicationInventoryMode.STOCK) return
         val current = medication.currentQuantity ?: medication.totalQuantity ?: return
-        val delta   = medication.quantityPerDose.takeIf { it > 0.0 } ?: 1.0
+        val delta = medication.quantityPerDose.takeIf { it > 0.0 } ?: 1.0
         val updatedQuantity = if (decrement) {
             (current - delta).coerceAtLeast(0.0)
         } else {
@@ -531,7 +546,7 @@ class DashboardViewModel @Inject constructor(
         repository.updateMedication(
             medication.copy(
                 currentQuantity = updatedQuantity,
-                lastModifiedAt  = System.currentTimeMillis()
+                lastModifiedAt = System.currentTimeMillis()
             )
         )
     }
@@ -549,14 +564,14 @@ class DashboardViewModel @Inject constructor(
             val patientId = _currentPatient.value?.id ?: return@launch
             repository.insertBloodPressure(
                 BloodPressureEntity(
-                    patientId        = patientId,
-                    systolic         = systolic,
-                    diastolic        = diastolic,
-                    pulse            = pulse,
+                    patientId = patientId,
+                    systolic = systolic,
+                    diastolic = diastolic,
+                    pulse = pulse,
                     oxygenSaturation = oxygenSaturation,
-                    date             = getTodayMillis(),
-                    time             = System.currentTimeMillis(),
-                    notes            = notes
+                    date = getTodayMillis(),
+                    time = System.currentTimeMillis(),
+                    notes = notes
                 )
             )
         }
@@ -574,12 +589,12 @@ class DashboardViewModel @Inject constructor(
             val now = System.currentTimeMillis()
             repository.insertBodyTemperature(
                 BodyTemperatureEntity(
-                    patientId   = patientId,
+                    patientId = patientId,
                     temperature = temperature,
-                    site        = site,
-                    date        = getTodayMillis(),
-                    time        = now,
-                    notes       = notes?.takeIf { it.isNotBlank() }
+                    site = site,
+                    date = getTodayMillis(),
+                    time = now,
+                    notes = notes?.takeIf { it.isNotBlank() }
                 )
             )
         }
@@ -603,13 +618,13 @@ class DashboardViewModel @Inject constructor(
             val now = System.currentTimeMillis()
             repository.insertSymptom(
                 SymptomEntity(
-                    patientId               = patientId,
-                    date                    = getTodayMillis(),
-                    time                    = now,
-                    symptomType             = symptomType,
-                    severity                = severity,
-                    notes                   = notes?.takeIf { it.isNotBlank() },
-                    inhalerUsed             = inhalerUsed,
+                    patientId = patientId,
+                    date = getTodayMillis(),
+                    time = now,
+                    symptomType = symptomType,
+                    severity = severity,
+                    notes = notes?.takeIf { it.isNotBlank() },
+                    inhalerUsed = inhalerUsed,
                     improvementAfterInhaler = improvementAfterInhaler
                 )
             )
@@ -624,46 +639,39 @@ class DashboardViewModel @Inject constructor(
         }
     }
 
-    // WITH this corrected version:
-     fun addMedicationWithPermissionCheck(
-         name: String, dosage: String, unit: String, freq: String,
-         times: List<String>, notes: String?, days: Int, mode: String,
-         totalQty: Double?, currentQty: Double?, qtyPerDose: Double
-     ) {
-         val context = getApplication<Application>().applicationContext
+    fun addMedicationWithPermissionCheck(
+        name: String, dosage: String, dosageFormKey: String, unit: String, freq: String,
+        times: List<String>, notes: String?, days: Int, mode: String,
+        totalQty: Double?, currentQty: Double?, qtyPerDose: Double
+    ) {
+        val context = getApplication<Application>().applicationContext
 
-         // Check A14 full-screen intent permission — only show dialog if ACTUALLY missing
-         if (AlarmPermissionHelper.needsFullScreenIntentPermission(context)) {
-             showA14Dialog = true
-         }
+        // Check A14 full-screen intent permission — only show dialog if ACTUALLY missing
+        if (AlarmPermissionHelper.needsFullScreenIntentPermission(context)) {
+            showA14Dialog = true
+        }
 
-         // Check OEM permission for Xiaomi on FIRST time adding medicine
-         if (AlarmPermissionHelper.isRestrictedOEM()) {
-             val prefs = context.getSharedPreferences("hm_permissions", Context.MODE_PRIVATE)
-             val hasSeenOemWarning = prefs.getBoolean("oem_warning_seen", false)
+        // Show OEM dialog if the user hasn't granted or ignored it yet.
+        // needsOemPermission() no longer depends on "oem_warning_seen" so this
+        // is consistent with the proactive card shown on Medications screen.
+        if (AlarmPermissionHelper.needsOemPermission(context)) {
+            showOemDialog = true
+        }
 
-             if (!hasSeenOemWarning) {
-                 // First time - show dialog
-                 showOemDialog = true
-                 // Mark that we've shown it once
-                 prefs.edit { putBoolean("oem_warning_seen", true) }
-             }
-         }
-
-         // Always save the medication regardless — the alarm will still work
-         // as a heads-up notification even without full-screen intent permission
-         addMedication(name, dosage, unit, freq, times, notes, days, mode, totalQty, currentQty, qtyPerDose)
-     }
+        // Always save the medication regardless — the alarm will still work
+        // as a heads-up notification even without full-screen intent permission
+        addMedication(name, dosage, dosageFormKey, unit, freq, times, notes, days, mode, totalQty, currentQty, qtyPerDose)
+    }
 
     // ── Helpers ───────────────────────────────────────────────────────────
 
     private fun calculateAdherence() {
-        val schedMap   = _scheduleMap.value
+        val schedMap = _scheduleMap.value
         val totalDoses = _todayMedications.value.sumOf { med ->
             schedMap[med.id]?.size?.coerceAtLeast(1) ?: 1
         }
         val takenDoses = _medicationLogs.value.count { it.taken }
-        _todayDoseCount.value    = totalDoses
+        _todayDoseCount.value = totalDoses
         _medicationAdherence.value = if (totalDoses > 0) (takenDoses * 100) / totalDoses else 0
     }
 

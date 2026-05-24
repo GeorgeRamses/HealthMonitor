@@ -47,7 +47,7 @@ class MedicationReminderViewModel @Inject constructor(
             val ctx = getApplication<Application>().applicationContext
             repository.insertMedication(med)
             parseMedicationTimes(med.scheduledTimes).forEach { time ->
-                AlarmScheduler.schedule(ctx, med.name, med.id, time)
+                AlarmScheduler.schedule(ctx, med.name, med.id, time, dosageLabel(med))
             }
         }
     }
@@ -72,6 +72,9 @@ class MedicationReminderViewModel @Inject constructor(
             AlarmScheduler.cancelAll(context, med.name, med.id, times)
             return
         }
-        times.forEach { AlarmScheduler.schedule(context, med.name, med.id, it) }
+        times.forEach { AlarmScheduler.schedule(context, med.name, med.id, it, dosageLabel(med)) }
     }
+
+    private fun dosageLabel(med: MedicationEntity): String =
+        listOf(med.dosage.trim(), med.unit.trim()).filter { it.isNotBlank() }.joinToString(" ")
 }

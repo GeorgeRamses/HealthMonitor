@@ -77,16 +77,14 @@ class MissedDoseReceiver : BroadcastReceiver() {
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
         // Reuse the existing alarm channel — it's already IMPORTANCE_HIGH
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                CHANNEL_ID,
-                "تنبيهات الأدوية",
-                NotificationManager.IMPORTANCE_DEFAULT   // softer than the alarm notification
-            ).apply {
-                description = "تذكيرات الجرعات الفائتة"
-            }
-            manager.createNotificationChannel(channel)
+        val channel = NotificationChannel(
+            CHANNEL_ID,
+            "تنبيهات الأدوية",
+            NotificationManager.IMPORTANCE_DEFAULT   // softer than the alarm notification
+        ).apply {
+            description = "تذكيرات الجرعات الفائتة"
         }
+        manager.createNotificationChannel(channel)
 
         val tapIntent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
@@ -119,7 +117,7 @@ class MissedDoseReceiver : BroadcastReceiver() {
 
     companion object {
         private const val TAG                  = "MissedDoseReceiver"
-        private const val CHANNEL_ID           = "medication_reminders_v2"
+        private const val CHANNEL_ID           = "medication_reminders_v4"
         const val EXTRA_MEDICATION_ID          = "medication_id"
         const val EXTRA_MEDICATION_NAME        = "medication_name"
         const val EXTRA_SCHEDULED_TIME         = "scheduled_time"

@@ -22,3 +22,31 @@
 
 # Suppress R8 warning for missing SLF4J logger binder
 -dontwarn org.slf4j.impl.StaticLoggerBinder
+# Ktor
+-keep class io.ktor.** { *; }
+-keep class kotlinx.serialization.** { *; }
+-keepattributes *Annotation*, InnerClasses
+-dontnote kotlinx.serialization.**
+
+# Room
+-keep class * extends androidx.room.RoomDatabase
+-keep @androidx.room.Entity class *
+-keepclassmembers @androidx.room.Entity class * { *; }
+
+# Hilt / Dagger
+-keep class dagger.hilt.** { *; }
+-keep class * extends dagger.hilt.android.internal.managers.* { *; }
+-keepclasseswithmembernames class * { @javax.inject.* <fields>; }
+
+# Your data models
+-keep class com.healthmonitor.app.data.** { *; }
+-keep class com.healthmonitor.app.util.** { *; }
+
+# SQLCipher
+-keep class net.sqlcipher.** { *; }
+-keep class net.sqlcipher.database.** { *; }
+
+# Firebase Crashlytics
+-keepattributes SourceFile,LineNumberTable
+-keep public class * extends java.lang.Exception
+-keep class com.google.firebase.crashlytics.** { *; }

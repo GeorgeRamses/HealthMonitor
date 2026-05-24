@@ -99,14 +99,17 @@ interface MedicationLogDao {
     @Update
     suspend fun update(l: MedicationLogEntity)
 
-    @Query("""
+    @Query(
+        """
         SELECT * FROM medication_logs
         WHERE medicationId = :mid AND date = :date AND scheduledTime = :scheduledTime AND isDeleted = 0
         LIMIT 1
-    """)
+    """
+    )
     suspend fun getLogForDose(mid: String, date: Long, scheduledTime: String): MedicationLogEntity?
 
-    @Query("""
+    @Query(
+        """
     SELECT ml.* FROM medication_logs ml
     INNER JOIN medications m ON ml.medicationId = m.id
     WHERE ml.patientId = :pid
@@ -115,49 +118,59 @@ interface MedicationLogDao {
     AND m.caseId = :caseId
     AND m.isDeleted = 0
     ORDER BY ml.time
-""")
+"""
+    )
     fun getLogsForDate(pid: String, caseId: String, date: Long): Flow<List<MedicationLogEntity>>
 
 
-    @Query("""
+    @Query(
+        """
     SELECT * FROM medication_logs 
     WHERE medicationId IN (:medicationIds) 
     AND date = :date 
     AND isDeleted = 0 
     ORDER BY time
-""")
+"""
+    )
     fun getLogsForMedications(
         medicationIds: List<String>,
         date: Long
     ): Flow<List<MedicationLogEntity>>
 
-    @Query("""
+    @Query(
+        """
     SELECT * FROM medication_logs
     WHERE medicationId IN (:medicationIds)
     AND isDeleted = 0
     ORDER BY date DESC, time DESC
-""")
+"""
+    )
     fun getLogsForMedications(medicationIds: List<String>): Flow<List<MedicationLogEntity>>
 
-    @Query("""
+    @Query(
+        """
     SELECT * FROM medication_logs
     WHERE medicationId = :medicationId
     AND taken = 1
     AND isDeleted = 0
     ORDER BY time DESC
     LIMIT 1
-""")
+"""
+    )
     fun getLastTakenLog(medicationId: String): Flow<MedicationLogEntity?>
 
-    @Query("""
+    @Query(
+        """
     SELECT COUNT(*) FROM medication_logs
     WHERE medicationId = :medicationId
     AND taken = 1
     AND isDeleted = 0
-""")
+"""
+    )
     fun getTakenDoseCount(medicationId: String): Flow<Int>
 
-    @Query("""
+    @Query(
+        """
     SELECT COUNT(*) FROM medication_logs ml
     INNER JOIN medications m ON ml.medicationId = m.id
     WHERE ml.patientId = :pid
@@ -166,7 +179,8 @@ interface MedicationLogDao {
     AND ml.isDeleted = 0
     AND m.caseId = :caseId
     AND m.isDeleted = 0
-""")
+"""
+    )
     suspend fun getTakenCount(pid: String, caseId: String, date: Long): Int
 
     @Query("SELECT * FROM medication_logs WHERE lastModifiedAt > :since")
@@ -187,21 +201,27 @@ interface BloodPressureDao {
     fun getReadingsByPatient(pid: String): Flow<List<BloodPressureEntity>>
 
     /** Returns readings whose date falls within [fromDate, toDate] inclusive. */
-    @Query("""
+    @Query(
+        """
         SELECT * FROM blood_pressure_readings
         WHERE patientId = :pid
         AND isDeleted = 0
         AND date >= :fromDate
         AND date <= :toDate
         ORDER BY date DESC, time DESC
-    """)
+    """
+    )
     fun getReadingsByPatientInRange(pid: String, fromDate: Long, toDate: Long): Flow<List<BloodPressureEntity>>
+
+    @Query("SELECT * FROM blood_pressure_readings WHERE patientId = :pid AND isDeleted = 0 ORDER BY date DESC")
+    suspend fun getReadingsByPatientOnce(pid: String): List<BloodPressureEntity>
 
     @Query("SELECT * FROM blood_pressure_readings WHERE patientId = :pid AND isDeleted = 0 ORDER BY date DESC LIMIT 1")
     suspend fun getLatestReading(pid: String): BloodPressureEntity?
 
     /** Latest reading within the case date range. */
-    @Query("""
+    @Query(
+        """
         SELECT * FROM blood_pressure_readings
         WHERE patientId = :pid
         AND isDeleted = 0
@@ -209,7 +229,8 @@ interface BloodPressureDao {
         AND date <= :toDate
         ORDER BY date DESC, time DESC
         LIMIT 1
-    """)
+    """
+    )
     suspend fun getLatestReadingInRange(pid: String, fromDate: Long, toDate: Long): BloodPressureEntity?
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -233,14 +254,16 @@ interface BodyTemperatureDao {
     fun getReadingsByPatient(pid: String): Flow<List<BodyTemperatureEntity>>
 
     /** Returns readings within [fromDate, toDate] inclusive. */
-    @Query("""
+    @Query(
+        """
         SELECT * FROM body_temperature_readings
         WHERE patientId = :pid
         AND isDeleted = 0
         AND date >= :fromDate
         AND date <= :toDate
         ORDER BY date DESC, time DESC
-    """)
+    """
+    )
     fun getReadingsByPatientInRange(pid: String, fromDate: Long, toDate: Long): Flow<List<BodyTemperatureEntity>>
 
     @Query("SELECT * FROM body_temperature_readings WHERE patientId = :pid AND isDeleted = 0 ORDER BY date DESC LIMIT 1")
@@ -270,14 +293,16 @@ interface SymptomDao {
     fun getSymptomsByPatient(pid: String): Flow<List<SymptomEntity>>
 
     /** Returns symptoms within [fromDate, toDate] inclusive. */
-    @Query("""
+    @Query(
+        """
         SELECT * FROM symptoms
         WHERE patientId = :pid
         AND isDeleted = 0
         AND date >= :fromDate
         AND date <= :toDate
         ORDER BY date DESC, time DESC
-    """)
+    """
+    )
     fun getSymptomsByPatientInRange(pid: String, fromDate: Long, toDate: Long): Flow<List<SymptomEntity>>
 
     @Query("SELECT * FROM symptoms WHERE lastModifiedAt > :since")
@@ -362,12 +387,14 @@ interface LabReportDao {
     @Query("SELECT * FROM lab_reports WHERE patientId = :pid AND isDeleted = 0 ORDER BY reportDate DESC, capturedAt DESC")
     fun getReportsByPatient(pid: String): Flow<List<LabReportEntity>>
 
-    @Query("""
+    @Query(
+        """
         SELECT * FROM lab_reports
         WHERE patientId = :pid AND isDeleted = 0
         AND reportDate >= :fromDate AND reportDate <= :toDate
         ORDER BY reportDate DESC, capturedAt DESC
-    """)
+    """
+    )
     fun getReportsByPatientInRange(pid: String, fromDate: Long, toDate: Long): Flow<List<LabReportEntity>>
 
     @Query("SELECT * FROM lab_reports WHERE id = :id AND isDeleted = 0 LIMIT 1")

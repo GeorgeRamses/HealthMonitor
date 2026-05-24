@@ -157,5 +157,16 @@ class HealthMonitorRepository @Inject constructor(
 
     suspend fun deleteItemsForReport(reportId: String) =
         db.labReportItemDao().deleteItemsForReport(reportId)
+
+    suspend fun getBloodPressureReadingsOnce(pid: String): List<BloodPressureEntity> =
+        db.bloodPressureDao().getReadingsByPatientOnce(pid)
+
+    suspend fun getSymptomsOnce(pid: String): List<SymptomEntity> =
+        db.symptomDao().getModifiedSince(0L)
+            .filter { it.patientId == pid && !it.isDeleted }
+
+    suspend fun getLabReportsOnce(pid: String): List<LabReportEntity> =
+        db.labReportDao().getModifiedSince(0L)
+            .filter { it.patientId == pid && !it.isDeleted }
 }
 

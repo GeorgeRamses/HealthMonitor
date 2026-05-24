@@ -29,6 +29,7 @@ data class MedicationEntity(
     val caseId: String? = null,
     val name: String,
     val dosage: String,
+    val dosageFormKey: String = "",
     val unit: String = "mg",
     val frequency: String = "once_daily",
     val timesPerDay: Int = 1,

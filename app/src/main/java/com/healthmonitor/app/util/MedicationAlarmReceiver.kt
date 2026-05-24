@@ -7,10 +7,11 @@ import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.os.Build
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import com.healthmonitor.app.MainActivity
 import com.healthmonitor.app.data.local.HealthMonitorDatabase
+import com.healthmonitor.app.data.local.entities.MedicationEntity
 import com.healthmonitor.app.ui.screens.isMedicationAlarmsEnabled
 import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
@@ -51,34 +52,41 @@ class MedicationAlarmReceiver : BroadcastReceiver() {
         val scheduledTime  = intent.getStringExtra(EXTRA_SCHEDULED_TIME)  ?: ""
         val isSnooze       = intent.getBooleanExtra(EXTRA_IS_SNOOZE, false)
 
-        // ── Reschedule next-day alarm IMMEDIATELY (synchronous) ───────────────
-        // Must happen before the coroutine — goAsync() gives only ~10s on API 29+.
-        if (!isSnooze && scheduledTime.isNotBlank() && medicationId.isNotBlank()) {
-            AlarmScheduler.schedule(context, medicationName, medicationId, scheduledTime)
-            Log.i(TAG, "next-day alarm rescheduled synchronously for $medicationName at $scheduledTime")
-        }
-
         val pendingResult = goAsync()
 
         CoroutineScope(Dispatchers.IO + SupervisorJob()).launch {
             try {
+                val currentMedication = getCurrentMedicationForAlarm(context, medicationId, scheduledTime)
+                if (!isSnooze && currentMedication == null) {
+                    AlarmScheduler.cancel(context, medicationName, medicationId, scheduledTime)
+                    Log.i(TAG, "skipped stale alarm for $medicationName at $scheduledTime")
+                    return@launch
+                }
+
+                val activeName = currentMedication?.name ?: medicationName
+                val activeDosage = currentMedication?.let { dosageLabel(it) } ?: dosage
                 val alarmsEnabled = isSnooze || isMedicationAlarmsEnabled(context)
                 val alreadyTaken  = !isSnooze && isAlreadyTaken(context, medicationId, scheduledTime)
                 val shouldFire    = alarmsEnabled && !alreadyTaken
 
+                if (!isSnooze && shouldFire) {
+                    AlarmScheduler.schedule(context, activeName, medicationId, scheduledTime, activeDosage)
+                    Log.i(TAG, "next-day alarm rescheduled for $activeName at $scheduledTime")
+                }
+
                 if (shouldFire) {
                     showAlarmNotification(
-                        context, medicationId, medicationName, dosage, scheduledTime
+                        context, medicationId, activeName, activeDosage, scheduledTime
                     )
-                    Log.i(TAG, "alarm notification posted for $medicationName at $scheduledTime")
+                    Log.i(TAG, "alarm notification posted for $activeName at $scheduledTime")
 
                     if (!isSnooze) {
-                        MissedDoseReceiver.schedule(context, medicationId, medicationName, scheduledTime)
+                        MissedDoseReceiver.schedule(context, medicationId, activeName, scheduledTime)
                     }
                 } else {
                     when {
-                        !alarmsEnabled -> Log.i(TAG, "skipped — alarms globally disabled: $medicationName")
-                        alreadyTaken   -> Log.i(TAG, "skipped — already taken: $medicationName at $scheduledTime")
+                        !alarmsEnabled -> Log.i(TAG, "skipped — alarms globally disabled: $activeName")
+                        true -> Log.i(TAG, "skipped — already taken: $activeName at $scheduledTime")
                     }
                 }
 
@@ -96,6 +104,30 @@ class MedicationAlarmReceiver : BroadcastReceiver() {
     }
 
     // ── DB check ──────────────────────────────────────────────────────────────
+
+    private suspend fun getCurrentMedicationForAlarm(
+        context: Context,
+        medicationId: String,
+        scheduledTime: String
+    ): MedicationEntity? {
+        if (medicationId.isBlank() || scheduledTime.isBlank()) return null
+        return try {
+            val db = EntryPointAccessors
+                .fromApplication(context.applicationContext, AlarmEntryPoint::class.java)
+                .database()
+            val medication = db.medicationDao().getMedicationById(medicationId)
+                ?.takeIf { it.isActive && !it.isDeleted }
+                ?: return null
+            val currentTimes = db.medicationScheduleDao()
+                .getSchedulesForMedicationOnce(medicationId)
+                .map { it.scheduledTime }
+                .ifEmpty { parseMedicationTimes(medication.scheduledTimes) }
+            medication.takeIf { scheduledTime in currentTimes }
+        } catch (e: Exception) {
+            Log.e(TAG, "current alarm validation failed: ${e.message}")
+            null
+        }
+    }
 
     private suspend fun isAlreadyTaken(
         context: Context,
@@ -118,6 +150,7 @@ class MedicationAlarmReceiver : BroadcastReceiver() {
     // ── Alarm notification ────────────────────────────────────────────────────
 
     @SuppressLint("FullScreenIntentPolicy")
+    @Suppress("WrongConstant")
     private fun showAlarmNotification(
         context: Context,
         medicationId: String,
@@ -128,20 +161,18 @@ class MedicationAlarmReceiver : BroadcastReceiver() {
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
         // Ensure channel exists at IMPORTANCE_MAX
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                CHANNEL_ID,
-                "تنبيهات الأدوية",
-                NotificationManager.IMPORTANCE_MAX
-            ).apply {
-                description         = "تذكير بمواعيد الأدوية"
-                enableVibration(true)
-                enableLights(true)
-                setBypassDnd(true)
-                lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
-            }
-            manager.createNotificationChannel(channel)
+        val channel = NotificationChannel(
+            CHANNEL_ID,
+            "تنبيهات الأدوية",
+            NotificationManager.IMPORTANCE_MAX
+        ).apply {
+            description         = "تذكير بمواعيد الأدوية"
+            enableVibration(true)
+            enableLights(true)
+            setBypassDnd(true)
+            lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
         }
+        manager.createNotificationChannel(channel)
 
         val notificationId = (medicationId + scheduledTime).hashCode()
 
@@ -168,8 +199,15 @@ class MedicationAlarmReceiver : BroadcastReceiver() {
         // Previously used a direct Activity PendingIntent which opened the app
         // but left the ongoing notification visible — because Android does not
         // auto-cancel ongoing notifications even when their contentIntent fires.
-        val tapPi = NotificationTapReceiver.buildPendingIntent(context, notificationId)
-
+        val tapIntent = Intent(context, NotificationTapReceiver::class.java).apply {
+            putExtra(NotificationTapReceiver.EXTRA_NOTIFICATION_ID, notificationId)
+        }
+        val tapPi = PendingIntent.getBroadcast(
+            context,
+            notificationId + 9000,  // different request code from fullScreenPi
+            tapIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
         val dosageLabel = if (dosage.isNotBlank()) " — الجرعة: $dosage" else ""
         val body = "حان وقت جرعة $medicationName$dosageLabel (${format12Hour(scheduledTime)})"
 
@@ -180,8 +218,8 @@ class MedicationAlarmReceiver : BroadcastReceiver() {
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setCategory(NotificationCompat.CATEGORY_ALARM)
-            .setOngoing(true)           // cannot be swiped away; cancelled explicitly
-            .setAutoCancel(false)       // tap is handled by NotificationTapReceiver
+            .setOngoing(true)           // cannot be swiped away; canceled explicitly
+            .setAutoCancel(true)       // dismissed automatically when tapped
             .setContentIntent(tapPi)   // FIX: now cancels the notification on tap
             .setFullScreenIntent(fullScreenPi, true)
             .setVibrate(longArrayOf(0, 600, 300, 600, 300))
@@ -191,27 +229,29 @@ class MedicationAlarmReceiver : BroadcastReceiver() {
         manager.notify(notificationId, notification)
         Log.i(TAG, "notification posted id=$notificationId for $medicationName")
 
-        // ── Android 14+ fallback ──────────────────────────────────────────────
-        // If USE_FULL_SCREEN_INTENT permission is missing, attempt direct launch.
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            if (!manager.canUseFullScreenIntent()) {
-                Log.w(TAG, "USE_FULL_SCREEN_INTENT not granted — attempting direct startActivity()")
-                try {
-                    context.startActivity(
-                        alarmActivityIntent.apply {
-                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        }
-                    )
-                } catch (e: Exception) {
-                    Log.w(TAG, "direct startActivity() fallback failed: ${e.message}")
+        // Full-screen notification promotion can be downgraded by device policy.
+        // Try a direct alarm activity launch as well; if Android blocks it, the
+        // alarm notification remains available as the fallback.
+        Log.w(TAG, "attempting direct alarm activity launch")
+        try {
+            context.startActivity(
+                alarmActivityIntent.apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
-            }
+            )
+        } catch (e: Exception) {
+            Log.w(TAG, "direct startActivity() fallback failed: ${e.message}")
         }
     }
 
+    private fun dosageLabel(medication: MedicationEntity): String =
+        listOf(medication.dosage.trim(), medication.unit.trim())
+            .filter { it.isNotBlank() }
+            .joinToString(" ")
+
     companion object {
         private const val TAG           = "MedicationAlarmReceiver"
-        const val CHANNEL_ID            = "medication_reminders_v3"
+        const val CHANNEL_ID            = "medication_reminders_v4"
         const val EXTRA_MEDICATION_ID   = "medication_id"
         const val EXTRA_MEDICATION_NAME = "medication_name"
         const val EXTRA_DOSAGE          = "dosage"

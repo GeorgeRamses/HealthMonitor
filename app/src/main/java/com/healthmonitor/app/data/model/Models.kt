@@ -340,4 +340,7 @@ object DosageFormType {
             else                                                 -> OTHER
         }
     }
+
+    fun fromKey(key: String?): DosageForm? =
+        all.firstOrNull { it.key == key?.trim() }
 }

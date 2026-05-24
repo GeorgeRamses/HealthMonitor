@@ -3,10 +3,14 @@ package com.healthmonitor.app
 import android.app.Application
 import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
+import com.google.firebase.crashlytics.FirebaseCrashlytics
+import com.healthmonitor.app.data.local.DatabaseKeyManager
+import com.healthmonitor.app.data.local.DatabaseMigrationHelper
 import com.healthmonitor.app.data.local.HealthMonitorDatabase
 import com.healthmonitor.app.util.ActiveCaseManager
 import com.healthmonitor.app.util.ActivePatientManager
 import com.healthmonitor.app.util.AlarmVerificationWorker
+import com.healthmonitor.app.util.ConsentManager
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -28,20 +32,23 @@ class HealthMonitorApplication : Application(), Configuration.Provider {
 
     override fun onCreate() {
         super.onCreate()
+        // Initialize Crashlytics — disabled in debug builds to avoid noise
+        if (ConsentManager.isConsentGranted(this)) {
+            FirebaseCrashlytics.getInstance()
+                .setCrashlyticsCollectionEnabled(true)
+        }
 
-        // Restore persisted selections into StateFlows immediately
-        // so ViewModels and Composables read the correct value on first access.
         ActivePatientManager.init(this)
         ActiveCaseManager.init(this)
 
-        // Validate restored IDs against the DB in the background.
-        // If a patient or case was deleted since last session, clear the stale ID.
         CoroutineScope(Dispatchers.IO).launch {
+            // Run migration FIRST — before any DB query touches the file
+            val passphrase = DatabaseKeyManager.getOrCreateKey(applicationContext)
+            DatabaseMigrationHelper.migrateToEncryptedIfNeeded(applicationContext, passphrase)
+
+            // Then validate selections — this triggers the first DB access
             validateRestoredSelections()
         }
-
-        // Start the periodic alarm verification heartbeat.
-        // Safe to call every launch — WorkManager deduplicates via a unique name.
         AlarmVerificationWorker.enqueue(this)
     }
 

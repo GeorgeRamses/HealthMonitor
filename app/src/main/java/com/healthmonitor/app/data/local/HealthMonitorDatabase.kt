@@ -1,6 +1,8 @@
 package com.healthmonitor.app.data.local
 
 import android.content.Context
+import android.os.Looper
+import android.util.Log
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
@@ -25,7 +27,7 @@ import com.healthmonitor.app.data.local.entities.*
         LabReportEntity::class,
         LabReportItemEntity::class
     ],
-    version = 10,
+    version = 11,
     exportSchema = true
 )
 abstract class HealthMonitorDatabase : RoomDatabase() {
@@ -359,13 +361,26 @@ abstract class HealthMonitorDatabase : RoomDatabase() {
                 )
             }
         }
+        private val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE medications ADD COLUMN dosageFormKey TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
         fun getDatabase(context: Context): HealthMonitorDatabase {
             return INSTANCE ?: synchronized(this) {
+                // NOTE: Room itself is lazy — it won't open or decrypt the DB
+                // until the first query, which always happens on a background thread.
+                // Migration is handled separately in HealthMonitorApplication on IO dispatcher.
+                val passphrase = DatabaseKeyManager.getOrCreateKey(context.applicationContext)
+                val factory = net.sqlcipher.database.SupportFactory(passphrase)
+
                 val instance = Room.databaseBuilder(
                     context.applicationContext,
                     HealthMonitorDatabase::class.java,
                     "health_monitor_db"
                 )
+                    .openHelperFactory(factory)
                     .addMigrations(
                         MIGRATION_1_2,
                         MIGRATION_2_3,
@@ -375,11 +390,14 @@ abstract class HealthMonitorDatabase : RoomDatabase() {
                         MIGRATION_6_7,
                         MIGRATION_7_8,
                         MIGRATION_8_9,
-                        MIGRATION_9_10
+                        MIGRATION_9_10,
+                        MIGRATION_10_11
                     )
                     .fallbackToDestructiveMigration(false)
                     .build()
+
                 INSTANCE = instance
+                Log.i("HealthMonitorDatabase", "Database instance created and cached")
                 instance
             }
         }

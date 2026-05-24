@@ -1,9 +1,11 @@
 package com.healthmonitor.app.util
 
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import android.util.Log
 import com.healthmonitor.app.MainActivity
 
@@ -27,7 +29,7 @@ class NotificationTapReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val notificationId = intent.getIntExtra(EXTRA_NOTIFICATION_ID, -1)
 
-        // Cancel the notification first so it disappears immediately on tap
+        // Cancel the notification first
         if (notificationId != -1) {
             val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             manager.cancel(notificationId)
@@ -36,31 +38,33 @@ class NotificationTapReceiver : BroadcastReceiver() {
 
         // Launch the main app
         val appIntent = Intent(context, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                    Intent.FLAG_ACTIVITY_CLEAR_TOP
         }
-        context.startActivity(appIntent)
+
+        // On Android 10+ we need to wrap in a PendingIntent and send it
+        // to get the foreground-launch exemption from the notification tap
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val pi = PendingIntent.getActivity(
+                context,
+                notificationId,
+                appIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            try {
+                pi.send()
+            } catch (e: PendingIntent.CanceledException) {
+                Log.e(TAG, "PendingIntent cancelled: ${e.message}")
+            }
+        } else {
+            context.startActivity(appIntent)
+        }
     }
 
     companion object {
         private const val TAG = "NotificationTapReceiver"
         const val EXTRA_NOTIFICATION_ID = "notification_id"
 
-        /**
-         * Build the PendingIntent used as the notification's contentIntent.
-         * Pass the same [notificationId] used in manager.notify() so the
-         * receiver knows exactly which notification to cancel.
-         */
-        fun buildPendingIntent(context: Context, notificationId: Int): android.app.PendingIntent {
-            val intent = Intent(context, NotificationTapReceiver::class.java).apply {
-                putExtra(EXTRA_NOTIFICATION_ID, notificationId)
-            }
-            return android.app.PendingIntent.getBroadcast(
-                context,
-                (notificationId.toString() + "tap").hashCode(),
-                intent,
-                android.app.PendingIntent.FLAG_UPDATE_CURRENT or
-                        android.app.PendingIntent.FLAG_IMMUTABLE
-            )
-        }
     }
 }

@@ -75,9 +75,13 @@ class LabReportViewModel @Inject constructor(
     private fun loadReports(pid: String) {
         viewModelScope.launch {
             repository.getLabReportsByPatient(pid).collect { reports ->
-                _reports.value = reports
-                // Load items for each report
-                val withItems = reports.map { report ->
+                val activeCaseId = caseId
+                val filtered = if (activeCaseId != null)
+                    reports.filter { it.caseId == activeCaseId }
+                else reports
+
+                _reports.value = filtered
+                val withItems = filtered.map { report ->
                     LabReportWithItems(
                         report = report,
                         items  = repository.getItemsForReportOnce(report.id)

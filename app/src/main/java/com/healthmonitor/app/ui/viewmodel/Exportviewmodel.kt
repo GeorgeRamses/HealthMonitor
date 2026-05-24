@@ -20,6 +20,7 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
 import javax.inject.Inject
+import kotlin.time.Duration.Companion.milliseconds
 
 data class ExportUiState(
     val isLoading: Boolean  = false,
@@ -56,38 +57,9 @@ class ExportViewModel @Inject constructor(
                 val symptoms   = repository.getSymptomsByPatient(patientId)
 
                 // Collect flows as one-shot snapshots
-                val bpList  = repository.getBloodPressureReadings(patientId)
-                    .let { flow ->
-                        var result = emptyList<BloodPressureEntity>()
-                        val job = viewModelScope.launch {
-                            flow.collect { result = it }
-                        }
-                        kotlinx.coroutines.delay(100)
-                        job.cancel()
-                        result
-                    }
-
-                val symptomList = repository.getSymptomsByPatient(patientId)
-                    .let { flow ->
-                        var result = emptyList<SymptomEntity>()
-                        val job = viewModelScope.launch {
-                            flow.collect { result = it }
-                        }
-                        kotlinx.coroutines.delay(100)
-                        job.cancel()
-                        result
-                    }
-
-                val labReports = repository.getLabReportsByPatient(patientId)
-                    .let { flow ->
-                        var result = emptyList<LabReportEntity>()
-                        val job = viewModelScope.launch {
-                            flow.collect { result = it }
-                        }
-                        kotlinx.coroutines.delay(100)
-                        job.cancel()
-                        result
-                    }
+                val bpList      = repository.getBloodPressureReadingsOnce(patientId).take(20)
+                val symptomList = repository.getSymptomsOnce(patientId).take(20)
+                val labReports  = repository.getLabReportsOnce(patientId).take(10)
 
                 // ── Build text report ─────────────────────────────────────
                 val text = buildReportText(

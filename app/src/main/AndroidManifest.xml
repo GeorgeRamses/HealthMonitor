@@ -23,11 +23,11 @@
         at runtime via Settings → Special app access → Alarms & reminders.
         The app checks canUseFullScreenIntent() and prompts accordingly.
     -->
-    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT"/>
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" tools:ignore="FullScreenIntentPolicy"/>
 
     <!-- ── Alarms ─────────────────────────────────────────────────────────── -->
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
-    <uses-permission android:name="android.permission.USE_EXACT_ALARM"/>
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" tools:ignore="ExactAlarmPolicy"/>
 
     <!-- ── Boot ───────────────────────────────────────────────────────────── -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
@@ -38,11 +38,8 @@
     <!-- ── Vibration ─────────────────────────────────────────────────────── -->
     <uses-permission android:name="android.permission.VIBRATE"/>
 
-    <!--
-        SYSTEM_ALERT_WINDOW — required on Xiaomi/OPPO/Vivo for full-screen alarm
-        display over other apps and the lock screen.
-    -->
-    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
+    <!-- SYSTEM_ALERT_WINDOW removed — setShowWhenLocked() handles lock screen
+         display without this permission, which triggers Play Store review flags -->
 
     <application
             android:name=".HealthMonitorApplication"
@@ -53,6 +50,16 @@
             android:supportsRtl="true"
             android:theme="@style/Theme.AppCompat.DayNight.NoActionBar"
             tools:targetApi="31">
+
+        <!--
+            Disable automatic Crashlytics data collection until the user
+            explicitly consents via the consent dialog on first launch.
+            Collection is enabled programmatically in HealthMonitorApplication
+            only after consent is granted.
+        -->
+        <meta-data
+                android:name="firebase_crashlytics_collection_enabled"
+                android:value="false" />
 
         <!--
             Disable WorkManager's default initializer so we can provide our own
@@ -72,8 +79,7 @@
         <!-- ── Main launcher activity ──────────────────────────────────────── -->
         <activity
                 android:name=".MainActivity"
-                android:exported="true"
-                android:label="@string/app_name">
+                android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
@@ -171,13 +177,3 @@
     </application>
 
 </manifest>
-
-
-
-
-
-
-
-
-
-

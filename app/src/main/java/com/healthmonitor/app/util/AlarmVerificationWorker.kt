@@ -47,7 +47,7 @@ class AlarmVerificationWorker @AssistedInject constructor(
             var rescheduled = 0
             meds.forEach { med ->
                 parseMedicationTimes(med.scheduledTimes).forEach { time ->
-                    AlarmScheduler.schedule(applicationContext, med.name, med.id, time)
+                    AlarmScheduler.schedule(applicationContext, med.name, med.id, time, dosageLabel(med.dosage, med.unit))
                     rescheduled++
                 }
             }
@@ -60,6 +60,9 @@ class AlarmVerificationWorker @AssistedInject constructor(
             Result.retry()
         }
     }
+
+    private fun dosageLabel(dosage: String, unit: String): String =
+        listOf(dosage.trim(), unit.trim()).filter { it.isNotBlank() }.joinToString(" ")
 
     companion object {
         private const val TAG         = "AlarmVerificationWorker"
@@ -74,7 +77,7 @@ class AlarmVerificationWorker @AssistedInject constructor(
          */
         fun enqueue(context: Context) {
             val request = PeriodicWorkRequestBuilder<AlarmVerificationWorker>(
-                repeatInterval    = 1,
+                repeatInterval    = 6,
                 repeatIntervalTimeUnit = TimeUnit.HOURS
             )
                 .setConstraints(

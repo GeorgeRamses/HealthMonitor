@@ -41,7 +41,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import com.google.firebase.crashlytics.FirebaseCrashlytics
 import com.healthmonitor.app.ui.design.*
+import com.healthmonitor.app.util.ConsentManager
 
 @Composable
 fun HealthMonitorApp(context: Context) {
@@ -50,10 +52,29 @@ fun HealthMonitorApp(context: Context) {
     HealthMonitorTheme {
         val patientViewModel: PatientViewModel = hiltViewModel()
         val caseViewModel: CaseViewModel = hiltViewModel()
-
         val patients by patientViewModel.getAllPatients().collectAsState(initial = null)
-        val activePatientId by patientViewModel.activePatientIdFlow.collectAsState()
+// Show consent dialog if not yet asked
+        var consentAsked by remember {
+            mutableStateOf(ConsentManager.isConsentAsked(context))
+        }
 
+        if (!consentAsked) {
+            ConsentDialog(
+                onAccept = {
+                    ConsentManager.setConsent(context, true)
+                    FirebaseCrashlytics.getInstance()
+                        .setCrashlyticsCollectionEnabled(true)
+                    consentAsked = true
+                },
+                onDecline = {
+                    ConsentManager.setConsent(context, false)
+                    FirebaseCrashlytics.getInstance()
+                        .setCrashlyticsCollectionEnabled(false)
+                    consentAsked = true
+                }
+            )
+            return@HealthMonitorTheme
+        }
         androidx.compose.animation.AnimatedContent(
             targetState = patients,
             transitionSpec = {
@@ -98,18 +119,22 @@ private fun MainAppScaffold(
             startDestination = "dashboard",
             modifier = Modifier.padding(paddingValues)
         ) {
-            composable("dashboard")            { DashboardScreen(navController) }
-            composable("medications")           { MedicationsScreen(navController) }
-            composable("health")                { HealthScreen(navController) }
-            composable("blood_pressure")        { HealthScreen(navController) }
-            composable("symptoms")              { HealthScreen(navController) }
-            composable("ai_tools")              { AiToolsScreen(navController) }
-            composable("settings")              { SettingsScreen(navController) }
-            composable("cases")                 { CasesScreen(navController) }
-            composable("patients")              { PatientsScreen(navController) }
-            composable("medication_reminder")   { MedicationReminderScreen(navController) }
-            composable("medication_history")    { MedicationHistoryScreen(navController) }
-            composable("patient_profile/{id}")  { backStackEntry ->
+            composable("dashboard") { DashboardScreen(navController) }
+            composable("medications") { MedicationsScreen(navController) }
+            composable("health") { HealthScreen(navController) }
+            composable("blood_pressure") { HealthScreen(navController) }
+            composable("symptoms") { HealthScreen(navController) }
+            composable("ai_tools") { AiToolsScreen(navController) }
+            composable("settings") { SettingsScreen(navController) }
+            composable("cases") { CasesScreen(navController) }
+            composable("patients") { PatientsScreen(navController) }
+            composable("medication_reminder") { MedicationReminderScreen(navController) }
+            composable("medication_history") { MedicationHistoryScreen(navController) }
+            composable("legal/{type}") { backStackEntry ->
+                val type = backStackEntry.arguments?.getString("type") ?: "privacy"
+                LegalScreen(type = type, navController = navController)
+            }
+            composable("patient_profile/{id}") { backStackEntry ->
                 val id = backStackEntry.arguments?.getString("id") ?: return@composable
                 PatientProfileScreen(patientId = id, navController = navController)
             }
@@ -125,20 +150,20 @@ private fun MainAppScaffold(
 private fun AppLoadingScreen() {
     val infiniteTransition = rememberInfiniteTransition(label = "loading_pulse")
     val alpha by infiniteTransition.animateFloat(
-        initialValue  = 0.3f,
-        targetValue   = 1f,
+        initialValue = 0.3f,
+        targetValue = 1f,
         animationSpec = infiniteRepeatable(
-            animation  = tween(900, easing = FastOutSlowInEasing),
+            animation = tween(900, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse
         ),
         label = "pulse_alpha"
     )
 
     Box(
-        modifier          = Modifier
+        modifier = Modifier
             .fillMaxSize()
             .background(HMColor.BgBase),
-        contentAlignment  = Alignment.Center
+        contentAlignment = Alignment.Center
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -155,20 +180,20 @@ private fun AppLoadingScreen() {
                 Icon(
                     Icons.Default.HealthAndSafety,
                     contentDescription = null,
-                    tint     = HMColor.GreenBright.copy(alpha = alpha),
+                    tint = HMColor.GreenBright.copy(alpha = alpha),
                     modifier = Modifier.size(36.dp)
                 )
             }
             Text(
                 "Health Monitor",
-                fontSize   = 22.sp,
+                fontSize = 22.sp,
                 fontWeight = FontWeight.Bold,
-                color      = HMColor.TextPrimary.copy(alpha = alpha)
+                color = HMColor.TextPrimary.copy(alpha = alpha)
             )
             CircularProgressIndicator(
-                color       = HMColor.GreenBright.copy(alpha = alpha),
+                color = HMColor.GreenBright.copy(alpha = alpha),
                 strokeWidth = 2.dp,
-                modifier    = Modifier.size(24.dp)
+                modifier = Modifier.size(24.dp)
             )
         }
     }
@@ -427,12 +452,12 @@ fun BottomNavigationBar(navController: NavHostController) {
     val currentRoute = navBackStackEntry?.destination?.route ?: "dashboard"
 
     val items = listOf(
-        NavItem("dashboard",   Icons.Outlined.Home,           Icons.Filled.Home,          "الرئيسية", HMColor.GreenBright),
-        NavItem("medications", Icons.Outlined.LocalPharmacy,  Icons.Filled.LocalPharmacy, "الأدوية",  HMColor.BlueBright),
-        NavItem("cases",       Icons.Outlined.FolderOpen,     Icons.Filled.Folder,        "الحالات",  HMColor.CyanBright),
-        NavItem("health",      Icons.Outlined.Favorite,       Icons.Filled.Favorite,      "الصحة",    HMColor.RedBright),
-        NavItem("ai_tools",    Icons.Outlined.AutoAwesome,    Icons.Filled.AutoAwesome,   "AI",       HMColor.AmberBright),
-        NavItem("settings",    Icons.Outlined.Settings,       Icons.Filled.Settings,      "الإعدادات", HMColor.TextSecondary)
+        NavItem("dashboard", Icons.Outlined.Home, Icons.Filled.Home, "الرئيسية", HMColor.GreenBright),
+        NavItem("medications", Icons.Outlined.LocalPharmacy, Icons.Filled.LocalPharmacy, "الأدوية", HMColor.BlueBright),
+        NavItem("cases", Icons.Outlined.FolderOpen, Icons.Filled.Folder, "الحالات", HMColor.CyanBright),
+        NavItem("health", Icons.Outlined.Favorite, Icons.Filled.Favorite, "الصحة", HMColor.RedBright),
+        NavItem("ai_tools", Icons.Outlined.AutoAwesome, Icons.Filled.AutoAwesome, "AI", HMColor.AmberBright),
+        NavItem("settings", Icons.Outlined.Settings, Icons.Filled.Settings, "الإعدادات", HMColor.TextSecondary)
     )
 
     // resolve legacy routes to their canonical equivalent
@@ -451,10 +476,10 @@ fun BottomNavigationBar(navController: NavHostController) {
             modifier = Modifier
                 .fillMaxWidth()
                 .shadow(
-                    elevation       = 12.dp,
-                    shape           = RoundedCornerShape(HMRadius.xl),
-                    ambientColor    = Color.Black.copy(alpha = 0.4f),
-                    spotColor       = Color.Black.copy(alpha = 0.4f)
+                    elevation = 12.dp,
+                    shape = RoundedCornerShape(HMRadius.xl),
+                    ambientColor = Color.Black.copy(alpha = 0.4f),
+                    spotColor = Color.Black.copy(alpha = 0.4f)
                 )
                 .clip(RoundedCornerShape(HMRadius.xl))
                 .background(
@@ -469,9 +494,9 @@ fun BottomNavigationBar(navController: NavHostController) {
             items.forEach { item ->
                 val isSelected = resolvedRoute == item.route
                 FloatingNavItem(
-                    item       = item,
+                    item = item,
                     isSelected = isSelected,
-                    onClick    = {
+                    onClick = {
                         if (resolvedRoute != item.route) {
                             navController.navigate(item.route) {
                                 popUpTo(navController.graph.startDestinationId)
@@ -525,10 +550,10 @@ private fun FloatingNavItem(
             }
             Spacer(Modifier.height(3.dp))
             Text(
-                text      = item.label,
-                fontSize  = if (isSelected) 10.sp else 9.5.sp,
+                text = item.label,
+                fontSize = if (isSelected) 10.sp else 9.5.sp,
                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                color     = color
+                color = color
             )
         }
     }
@@ -565,12 +590,120 @@ private fun createNotificationChannel(context: Context) {
             "تنبيهات الأدوية",
             NotificationManager.IMPORTANCE_MAX      // FIX: was IMPORTANCE_HIGH
         ).apply {
-            description         = "تنبيهات بمواعيد الأدوية"
+            description = "تنبيهات بمواعيد الأدوية"
             enableVibration(true)
             enableLights(true)
             setBypassDnd(true)
             lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
         }
         manager.createNotificationChannel(channel)
+    }
+}
+
+@Composable
+private fun ConsentDialog(
+    onAccept: () -> Unit,
+    onDecline: () -> Unit
+) {
+    var legalType by remember { mutableStateOf<String?>(null) }
+
+    legalType?.let { type ->
+        LegalDocumentDialog(
+            type = type,
+            onDismiss = { legalType = null }
+        )
+    }
+
+    AlertDialog(
+        onDismissRequest = { /* cannot dismiss — must choose */ },
+        containerColor = HMColor.BgElevated,
+        shape = RoundedCornerShape(HMRadius.lg),
+        title = {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(56.dp)
+                        .clip(RoundedCornerShape(HMRadius.md))
+                        .background(HMColor.BlueBright.copy(alpha = 0.12f))
+                        .border(1.dp, HMColor.BlueBorder, RoundedCornerShape(HMRadius.md)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Default.Shield,
+                        null,
+                        tint = HMColor.BlueBright,
+                        modifier = Modifier.size(28.dp)
+                    )
+                }
+                Spacer(Modifier.height(HMSpacing.md))
+                Text(
+                    "الخصوصية وجمع البيانات",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 17.sp,
+                    color = HMColor.TextPrimary
+                )
+            }
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(HMSpacing.sm)) {
+                Text(
+                    "لمساعدتنا في تحسين التطبيق وإصلاح الأخطاء، نود جمع بيانات تقنية مجهولة الهوية عند حدوث أعطال.",
+                    fontSize = 13.sp,
+                    color = HMColor.TextPrimary,
+                    lineHeight = 20.sp
+                )
+                HMCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    borderColor = HMColor.BlueBorder,
+                    backgroundColor = HMColor.BlueBg
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        ConsentPoint("لا يتم جمع أي بيانات صحية شخصية")
+                        ConsentPoint("البيانات المجمعة: نوع الجهاز، إصدار النظام، سجل الأخطاء التقنية فقط")
+                        ConsentPoint("يمكنك تغيير هذا الاختيار في الإعدادات في أي وقت")
+                    }
+                }
+                Text(
+                    "باختيار «موافق» فأنت توافق على سياسة الخصوصية الخاصة بنا.",
+                    fontSize = 11.sp,
+                    color = HMColor.TextSecondary,
+                    lineHeight = 16.sp
+                )
+                LegalButtons(
+                    onPrivacy = { legalType = "privacy" },
+                    onTerms = { legalType = "terms" }
+                )
+            }
+        },
+        confirmButton = {
+            HMPrimaryButton(
+                text = "موافق",
+                onClick = onAccept,
+                color = HMColor.BlueBright,
+                modifier = Modifier.fillMaxWidth()
+            )
+        },
+        dismissButton = {
+            HMSecondaryButton(
+                text = "رفض",
+                onClick = onDecline,
+                color = HMColor.TextSecondary,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+    )
+}
+
+@Composable
+private fun ConsentPoint(text: String) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(HMSpacing.sm),
+        verticalAlignment = Alignment.Top
+    ) {
+        Text("•", fontSize = 12.sp, color = HMColor.BlueBright)
+        Text(text, fontSize = 12.sp, color = HMColor.TextSecondary, lineHeight = 18.sp)
     }
 }

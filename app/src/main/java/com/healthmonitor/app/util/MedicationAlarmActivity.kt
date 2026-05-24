@@ -42,6 +42,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * Full-screen alarm activity that appears OVER the lock screen.
@@ -257,14 +258,7 @@ class MedicationAlarmActivity : ComponentActivity() {
                 @Suppress("DEPRECATION")
                 getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
             }
-            vibrator?.let { v ->
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    v.vibrate(VibrationEffect.createWaveform(pattern, 0))
-                } else {
-                    @Suppress("DEPRECATION")
-                    v.vibrate(pattern, 0)
-                }
-            }
+            vibrator?.vibrate(VibrationEffect.createWaveform(pattern, 0))
         } catch (e: Exception) {
             android.util.Log.e(TAG, "Vibrator failed: ${e.message}")
         }
@@ -368,7 +362,7 @@ private fun AlarmScreen(
 
     // Auto-snooze after 2 minutes if the user ignores the alarm
     LaunchedEffect(Unit) {
-        delay(120_000L)
+        delay(120_000L.milliseconds)
         onSnooze()
     }
 

@@ -96,9 +96,12 @@ class MainActivity : ComponentActivity() {
             val meds = db.medicationDao().getMedicationsByPatientOnce(patientId)
             meds.forEach { med ->
                 parseMedicationTimes(med.scheduledTimes).forEach { time ->
-                    AlarmScheduler.schedule(applicationContext, med.name, med.id, time)
+                    AlarmScheduler.schedule(applicationContext, med.name, med.id, time, dosageLabel(med.dosage, med.unit))
                 }
             }
         }
     }
+
+    private fun dosageLabel(dosage: String, unit: String): String =
+        listOf(dosage.trim(), unit.trim()).filter { it.isNotBlank() }.joinToString(" ")
 }
